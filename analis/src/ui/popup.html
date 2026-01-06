@@ -5,106 +5,57 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Анализатор Поведения</title>
     <link rel="stylesheet" href="popup.css">
-    <style>
-        /* Встроенные стили для совместимости с Comet */
-        #graphCanvas {
-            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
-            border-radius: 8px;
-            margin: 0;
-            padding: 0;
-        }
-    </style>
 </head>
 <body>
     <div class="container">
-        <!-- Навигация -->
-        <div class="navbar">
-            <h1>График Поведения</h1>
-            <div class="controls">
-                <button id="btnAnalyze" class="btn btn-primary">Анализировать</button>
-                <button id="btnExport" class="btn btn-secondary">Экспорт</button>
-                <button id="btnClear" class="btn btn-secondary">Очистить</button>
+        <!-- Заголовок с кнопками -->
+        <div class="header">
+            <h1>📊 Граф поведения</h1>
+            <div class="btn-group">
+                <button id="btnAnalyze" class="btn btn-small btn-primary" title="Анализировать">Анализ</button>
+                <button id="btnExport" class="btn btn-small btn-secondary" title="Экспорт">Экспорт</button>
+                <button id="btnClear" class="btn btn-small btn-secondary" title="Очистить">✕</button>
             </div>
         </div>
 
-        <!-- Основное содержимое -->
-        <div class="main-content">
-            <!-- График (canvas вместо Cytoscape для совместимости) -->
-            <canvas id="graphCanvas" class="graph-container"></canvas>
+        <!-- Компактная информация -->
+        <div class="info-bar">
+            <span class="info-item">
+                <strong>Узлов:</strong> <span id="nodeCount">0</span>
+            </span>
+            <span class="info-item">
+                <strong>Рёбер:</strong> <span id="edgeCount">0</span>
+            </span>
+            <span class="info-item">
+                <strong>Событий:</strong> <span id="eventCount">0</span>
+            </span>
+        </div>
 
-            <!-- Панель информации -->
-            <div class="sidebar">
-                <div class="panel">
-                    <h3>ИНФОРМАЦИЯ СЕССИИ</h3>
-                    <div class="info-group">
-                        <label>Узлов:</label>
-                        <span id="nodeCount">0</span>
-                    </div>
-                    <div class="info-group">
-                        <label>Рёбер:</label>
-                        <span id="edgeCount">0</span>
-                    </div>
-                    <div class="info-group">
-                        <label>Событий:</label>
-                        <span id="eventCount">0</span>
-                    </div>
-                    <div class="info-group">
-                        <label>Время:</label>
-                        <span id="duration">0с</span>
-                    </div>
-                </div>
+        <!-- График (основной элемент) -->
+        <canvas id="graphCanvas" class="graph"></canvas>
 
-                <div class="panel">
-                    <h3>КЛАССИФИКАЦИЯ</h3>
-                    <div class="classification">
-                        <div id="classResult" class="class-badge">-</div>
-                        <div id="confidence" class="confidence-meter">
-                            <div id="confidenceBar" class="confidence-bar" style="width: 0%"></div>
-                        </div>
-                        <span id="confidenceText">-</span>
-                    </div>
-                </div>
-
-                <div class="panel">
-                    <h3>МЕТРИКИ</h3>
-                    <div id="metrics" class="metrics-list">
-                        <div class="metric-item">
-                            <span class="metric-label">Разнообразие пути:</span>
-                            <span class="metric-value" id="metricPathVariety">0.00</span>
-                        </div>
-                        <div class="metric-item">
-                            <span class="metric-label">Сложные циклы:</span>
-                            <span class="metric-value" id="metricComplexCycles">Нет</span>
-                        </div>
-                        <div class="metric-item">
-                            <span class="metric-label">Среднее время:</span>
-                            <span class="metric-value" id="metricAvgTiming">0мс</span>
-                        </div>
-                        <div class="metric-item">
-                            <span class="metric-label">Дисперсия:</span>
-                            <span class="metric-value" id="metricVariance">0.00</span>
-                        </div>
-                    </div>
-                </div>
+        <!-- Метрики в одну строку -->
+        <div class="metrics-bar">
+            <div class="metric">
+                <span class="label">Разнообразие:</span>
+                <span class="value" id="metricPathVariety">0.00</span>
+            </div>
+            <div class="metric">
+                <span class="label">Циклы:</span>
+                <span class="value" id="metricComplexCycles">Нет</span>
+            </div>
+            <div class="metric">
+                <span class="label">Вер-ть бота:</span>
+                <span class="value" id="confidenceText">-</span>
             </div>
         </div>
 
-        <!-- Таблица событий -->
-        <div class="events-panel">
-            <h3>История событий</h3>
-            <div id="eventsList" class="events-list">
-                <p style="color: #999; font-size: 12px; padding: 10px;">Событий нет</p>
-            </div>
-        </div>
-
-        <!-- Нижняя строка статуса -->
-        <div class="status-bar">
+        <!-- Статус -->
+        <div class="status">
             <span id="status">Готово</span>
-            <span id="time"></span>
         </div>
     </div>
 
-    <!-- Исходящие скрипты (локальные) -->
     <script src="popup.js"></script>
 </body>
 </html>
