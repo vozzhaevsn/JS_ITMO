@@ -4,8 +4,16 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Анализатор Поведения</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.23.0/cytoscape.min.js"></script>
     <link rel="stylesheet" href="popup.css">
+    <style>
+        /* Встроенные стили для совместимости с Comet */
+        #graphCanvas {
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            border-radius: 8px;
+            margin: 0;
+            padding: 0;
+        }
+    </style>
 </head>
 <body>
     <div class="container">
@@ -21,19 +29,19 @@
 
         <!-- Основное содержимое -->
         <div class="main-content">
-            <!-- График -->
-            <div id="graph" class="graph-container"></div>
+            <!-- График (canvas вместо Cytoscape для совместимости) -->
+            <canvas id="graphCanvas" class="graph-container"></canvas>
 
             <!-- Панель информации -->
             <div class="sidebar">
                 <div class="panel">
-                    <h3>Информация сессии</h3>
+                    <h3>ИНФОРМАЦИЯ СЕССИИ</h3>
                     <div class="info-group">
                         <label>Узлов:</label>
                         <span id="nodeCount">0</span>
                     </div>
                     <div class="info-group">
-                        <label>Ребер:</label>
+                        <label>Рёбер:</label>
                         <span id="edgeCount">0</span>
                     </div>
                     <div class="info-group">
@@ -47,36 +55,56 @@
                 </div>
 
                 <div class="panel">
-                    <h3>Классификация</h3>
+                    <h3>КЛАССИФИКАЦИЯ</h3>
                     <div class="classification">
                         <div id="classResult" class="class-badge">-</div>
                         <div id="confidence" class="confidence-meter">
-                            <div id="confidenceBar" class="confidence-bar"></div>
+                            <div id="confidenceBar" class="confidence-bar" style="width: 0%"></div>
                         </div>
                         <span id="confidenceText">-</span>
                     </div>
                 </div>
 
                 <div class="panel">
-                    <h3>Метрики</h3>
-                    <div id="metrics" class="metrics-list"></div>
+                    <h3>МЕТРИКИ</h3>
+                    <div id="metrics" class="metrics-list">
+                        <div class="metric-item">
+                            <span class="metric-label">Разнообразие пути:</span>
+                            <span class="metric-value" id="metricPathVariety">0.00</span>
+                        </div>
+                        <div class="metric-item">
+                            <span class="metric-label">Сложные циклы:</span>
+                            <span class="metric-value" id="metricComplexCycles">Нет</span>
+                        </div>
+                        <div class="metric-item">
+                            <span class="metric-label">Среднее время:</span>
+                            <span class="metric-value" id="metricAvgTiming">0мс</span>
+                        </div>
+                        <div class="metric-item">
+                            <span class="metric-label">Дисперсия:</span>
+                            <span class="metric-value" id="metricVariance">0.00</span>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
 
         <!-- Таблица событий -->
         <div class="events-panel">
-            <h3>Стопа событий</h3>
-            <div id="eventsList" class="events-list"></div>
+            <h3>История событий</h3>
+            <div id="eventsList" class="events-list">
+                <p style="color: #999; font-size: 12px; padding: 10px;">Событий нет</p>
+            </div>
         </div>
 
         <!-- Нижняя строка статуса -->
         <div class="status-bar">
-            <span id="status">Наложить на что-нибудь...</span>
+            <span id="status">Готово</span>
             <span id="time"></span>
         </div>
     </div>
 
+    <!-- Исходящие скрипты (локальные) -->
     <script src="popup.js"></script>
 </body>
 </html>
