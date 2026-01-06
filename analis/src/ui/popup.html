@@ -1,71 +1,82 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Анализ Графа Поведения</title>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.29.2/cytoscape.min.js"></script>
-  <link rel="stylesheet" href="popup.css">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Анализатор Поведения</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.23.0/cytoscape.min.js"></script>
+    <link rel="stylesheet" href="popup.css">
 </head>
 <body>
-  <div class="container">
-    <div class="sidebar">
-      <div class="header">
-        <h2>📊 Граф Поведения</h2>
-        <p>Анализ в реальном времени</p>
-      </div>
-
-      <div class="stats">
-        <div class="stat-box">
-          <div class="stat-label">Узлы</div>
-          <div class="stat-value" id="nodeCount">0</div>
+    <div class="container">
+        <!-- Навигация -->
+        <div class="navbar">
+            <h1>График Поведения</h1>
+            <div class="controls">
+                <button id="btnAnalyze" class="btn btn-primary">Анализировать</button>
+                <button id="btnExport" class="btn btn-secondary">Экспорт</button>
+                <button id="btnClear" class="btn btn-secondary">Очистить</button>
+            </div>
         </div>
-        <div class="stat-box">
-          <div class="stat-label">Ребра</div>
-          <div class="stat-value" id="edgeCount">0</div>
-        </div>
-        <div class="stat-box">
-          <div class="stat-label">Сессии</div>
-          <div class="stat-value" id="sessionCount">0</div>
-        </div>
-        <div class="stat-box">
-          <div class="stat-label">Циклы</div>
-          <div class="stat-value" id="cycleCount">0</div>
-        </div>
-      </div>
 
-      <div class="controls">
-        <button id="analyzeBtn">🔍 Анализировать</button>
-        <button id="layoutBtn">🔄 Пересчитать</button>
-        <button id="exportBtn">📥 Экспорт JSON</button>
-        <button id="clearBtn">🗑️ Очистить</button>
-      </div>
+        <!-- Основное содержимое -->
+        <div class="main-content">
+            <!-- График -->
+            <div id="graph" class="graph-container"></div>
 
-      <div class="classification">
-        <div class="label">Классификация:</div>
-        <span class="badge human" id="classHuman">👤 Human: 0%</span>
-        <span class="badge bot" id="classBot">🤖 Bot: 0%</span>
-      </div>
+            <!-- Панель информации -->
+            <div class="sidebar">
+                <div class="panel">
+                    <h3>Информация сессии</h3>
+                    <div class="info-group">
+                        <label>Узлов:</label>
+                        <span id="nodeCount">0</span>
+                    </div>
+                    <div class="info-group">
+                        <label>Ребер:</label>
+                        <span id="edgeCount">0</span>
+                    </div>
+                    <div class="info-group">
+                        <label>Событий:</label>
+                        <span id="eventCount">0</span>
+                    </div>
+                    <div class="info-group">
+                        <label>Время:</label>
+                        <span id="duration">0с</span>
+                    </div>
+                </div>
 
-      <div class="session-list">
-        <h3>📋 Сессии</h3>
-        <div id="sessionsList"></div>
-      </div>
+                <div class="panel">
+                    <h3>Классификация</h3>
+                    <div class="classification">
+                        <div id="classResult" class="class-badge">-</div>
+                        <div id="confidence" class="confidence-meter">
+                            <div id="confidenceBar" class="confidence-bar"></div>
+                        </div>
+                        <span id="confidenceText">-</span>
+                    </div>
+                </div>
+
+                <div class="panel">
+                    <h3>Метрики</h3>
+                    <div id="metrics" class="metrics-list"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Таблица событий -->
+        <div class="events-panel">
+            <h3>Стопа событий</h3>
+            <div id="eventsList" class="events-list"></div>
+        </div>
+
+        <!-- Нижняя строка статуса -->
+        <div class="status-bar">
+            <span id="status">Наложить на что-нибудь...</span>
+            <span id="time"></span>
+        </div>
     </div>
 
-    <div class="graph-container">
-      <div id="cy"></div>
-      <div class="controls-overlay">
-        <button id="zoomFit">📐 По размеру</button>
-        <button id="centerView">🎯 Центр</button>
-      </div>
-    </div>
-  </div>
-
-  <input type="file" id="importFile" accept=".json" style="display: none;">
-
-  <script src="../core/BehaviorGraph.js"></script>
-  <script src="../core/BotDetector.js"></script>
-  <script src="popup.js"></script>
+    <script src="popup.js"></script>
 </body>
 </html>
