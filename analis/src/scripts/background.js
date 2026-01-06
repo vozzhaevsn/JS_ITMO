@@ -13,7 +13,7 @@ const analyzedSessions = [];
 let currentSession = null;
 let sessionEvents = [];
 
-// ✅ ИНИЦИАЛИЗИРУЕМ ПРИ ЗАГРУЗКЕ
+// ✅ ШАГИ 1-3: Инициализируем сессию при загрузке
 function initializeSession() {
   currentSession = {
     id: 'session_' + Date.now(),
@@ -22,14 +22,27 @@ function initializeSession() {
     events: [],
   };
   sessionEvents = [];
-  console.log('[BackgroundScript] ✅ Session initialized:', currentSession.id);
+  
+  // Сохраняем в chrome.storage
+  chrome.storage.local.set({
+    'currentSession': currentSession,
+    'sessionEvents': sessionEvents
+  }, function() {
+    console.log('[BackgroundScript] ✅ Session инициализирована и сохранена в storage:', currentSession.id);
+  });
 }
+
+// Проверяем доступ к storage
+chrome.storage.local.get(null, function(items) {
+  console.log('[BackgroundScript] Storage доступен:', Object.keys(items).length, 'ключей');
+});
 
 // Инициализируем при загрузке скрипта
 initializeSession();
 
 /**
  * Листенер послания от контент-скрипта
+ * ✅ ШАГИ 1-2: Используем function вместо стрелки для совместимости
  */
 chrome.runtime.onMessage.addListener(function(request, sender, sendResponse) {
   const tabId = sender.tab?.id;
@@ -58,29 +71,38 @@ chrome.runtime.onMessage.addListener(function(request, sender, sendResponse) {
       sendResponse(analysis);
       break;
 
-    // ✅ НОВЫЙ ОБРАБОТЧИК ДЛЯ POPUP
+    // ✅ ШАГИ 2-3: Обработчик GET_SESSION для popup
     case 'GET_SESSION':
     case 'GET_CURRENT_SESSION':
       console.log('[BackgroundScript] ✅ GET_SESSION запрос');
-      const response = {
-        success: true,
-        session: {
-          id: currentSession.id,
-          url: currentSession.url,
-          startTime: currentSession.startTime,
-          eventCount: sessionEvents.length,
-          events: sessionEvents.slice(-100), // Последние 100 событий
-        }
-      };
-      console.log('[BackgroundScript] Отправляю:', response.session.eventCount, 'событий');
-      sendResponse(response);
-      break;
+      
+      // Читаем из storage для надежности
+      chrome.storage.local.get(['currentSession', 'sessionEvents'], function(result) {
+        const session = result.currentSession || currentSession;
+        const events = result.sessionEvents || sessionEvents;
+        
+        const response = {
+          success: true,
+          session: {
+            id: session.id,
+            url: session.url,
+            startTime: session.startTime,
+            eventCount: events.length,
+            events: events.slice(-100), // Последние 100 событий
+          }
+        };
+        
+        console.log('[BackgroundScript] Отправляю:', response.session.eventCount, 'событий');
+        sendResponse(response);
+      });
+      
+      // ✅ ВАЖНО: return true для асинхронных ответов
+      return true;
 
     default:
       console.warn('[BackgroundScript] Неизвестный тип:', request.type);
   }
 
-  // ✅ ВАЖНО: return true для асинхронных ответов
   return true;
 });
 
@@ -108,11 +130,19 @@ function handlePageLoaded(tabId, url, data) {
   }
   
   sessionEvents = []; // Очищаем события при загрузке новой страницы
-  console.log('[BackgroundScript] Новая страница:', url);
+  
+  // Сохраняем в storage
+  chrome.storage.local.set({
+    'currentSession': currentSession,
+    'sessionEvents': sessionEvents
+  });
+  
+  console.log('[BackgroundScript] PAGE_LOADED:', url);
 }
 
 /**
  * Обработка события
+ * ✅ ШАГИ 2-3: Сохраняем события в chrome.storage каждые 10 событий
  */
 function handleEventRecording(tabId, event) {
   // Сохраняем в currentSession
@@ -124,12 +154,22 @@ function handleEventRecording(tabId, event) {
   };
   
   sessionEvents.push(eventWithMetadata);
-  console.log('[BackgroundScript] Записано событие:', event.type, '- Total:', sessionEvents.length);
+  console.log('[BackgroundScript] RECORD_EVENT:', event.type, '- Total:', sessionEvents.length);
 
   // Также сохраняем в activeSessions для обратной совместимости
   const session = activeSessions.get(tabId);
   if (session) {
     session.events.push(event);
+  }
+  
+  // ✅ Сохраняем в chrome.storage каждые 10 событий
+  if (sessionEvents.length % 10 === 0) {
+    chrome.storage.local.set({
+      'currentSession': currentSession,
+      'sessionEvents': sessionEvents
+    }, function() {
+      console.log('[BackgroundScript] 📝 Сохранено', sessionEvents.length, 'событий в storage');
+    });
   }
 }
 
@@ -189,7 +229,7 @@ function analyzeSession(tabId) {
  * Основные события расширения
  */
 
-// Очистка сессий при закрытии конключи
+// Очистка сессий при закрытии вкладки
 chrome.tabs.onRemoved.addListener((tabId) => {
   const session = activeSessions.get(tabId);
   if (session) {
