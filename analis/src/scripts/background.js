@@ -1,101 +1,146 @@
 /**
- * Background Service Worker
- * Управляет графом, обрабатывает сообщения от content script, хранит данные
+ * Background Script (Service Worker) - MV3
+ * Ответствен за: обработка событий, пракси, фоновые анализы
  */
 
-let graph = null;
-let currentSession = null;
-let sessionTimeout = null;
+console.log('[BackgroundScript] Нагружен');
 
-const SESSION_TIMEOUT = 30 * 60 * 1000; // 30 минут
+// Глобальное хранилище сессий
+const activeSessions = new Map();
+const analyzedSessions = [];
 
-// Инициализировать граф при загрузке
-chrome.runtime.onInstalled.addListener(async () => {
-  console.log('[background.js] Extension installed');
-  const data = await chrome.storage.local.get(['graphData']);
-  if (data.graphData) {
-    // Восстановить граф из хранилища
-    graph = new BehaviorGraph();
-    graph.fromJSON(data.graphData);
-  } else {
-    graph = new BehaviorGraph();
-  }
-});
-
-// Слушать сообщения от content script
+/**
+ * Листенер послания от контент-скрипта
+ */
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  if (request.type === 'ADD_EVENT') {
-    if (!graph) graph = new BehaviorGraph();
-    processEvent(request.payload, sender.tab.id, request.sessionId);
-    sendResponse({ status: 'processed' });
-  } else if (request.type === 'GET_GRAPH') {
-    sendResponse({ data: graph ? graph.toJSON() : null });
+  const tabId = sender.tab.id;
+  const url = sender.tab.url;
+
+  console.log(`[BackgroundScript] Получен: ${request.type}`);
+
+  switch (request.type) {
+    case 'PAGE_LOADED':
+      handlePageLoaded(tabId, url, request.data);
+      break;
+
+    case 'RECORD_EVENT':
+      handleEventRecording(tabId, request.data);
+      break;
+
+    case 'GET_SESSION_DATA':
+      const sessionData = getSessionData(tabId);
+      sendResponse(sessionData);
+      break;
+
+    case 'ANALYZE_SESSION':
+      const analysis = analyzeSession(tabId);
+      sendResponse(analysis);
+      break;
+
+    default:
+      console.warn(`[BackgroundScript] Неизвестный тип: ${request.type}`);
   }
 });
 
 /**
- * Обработать событие
+ * Обработка загруженной страницы
  */
-function processEvent(event, tabId, sessionId) {
-  if (!graph) graph = new BehaviorGraph();
-  if (!currentSession || currentSession.id !== sessionId) {
-    currentSession = {
-      id: sessionId,
-      tabId: tabId,
-      timestamp: Date.now(),
-      path: [],
-      events: []
-    };
+function handlePageLoaded(tabId, url, data) {
+  if (!activeSessions.has(tabId)) {
+    activeSessions.set(tabId, {
+      id: `session_${tabId}_${Date.now()}`,
+      tabId,
+      url,
+      title: data.title,
+      startTime: data.timestamp,
+      events: [],
+      classification: null
+    });
   }
-
-  if (sessionTimeout) clearTimeout(sessionTimeout);
-
-  const nodeId = event.target.selector || event.url;
-  
-  if (currentSession.path.length === 0 || currentSession.path[currentSession.path.length - 1] !== nodeId) {
-    currentSession.path.push(nodeId);
-    
-    if (currentSession.path.length > 1) {
-      const prevNodeId = currentSession.path[currentSession.path.length - 2];
-      graph.addEdge(prevNodeId, nodeId);
-    }
-    
-    graph.addNode(nodeId, { label: event.target.text || nodeId });
-  }
-
-  currentSession.events.push(event);
-
-  sessionTimeout = setTimeout(() => {
-    endSession();
-  }, SESSION_TIMEOUT);
-
-  // Сохранить граф
-  chrome.storage.local.set({
-    graphData: graph.toJSON()
-  });
+  console.log(`[BackgroundScript] Новая страница: ${url}`);
 }
 
 /**
- * Завершить сессию
+ * Обработка события
  */
-function endSession() {
-  if (currentSession && graph) {
-    graph.sessions.push(currentSession);
-    currentSession = null;
-    // Сохранить обновленный граф
-    chrome.storage.local.set({
-      graphData: graph.toJSON()
-    });
+function handleEventRecording(tabId, event) {
+  const session = activeSessions.get(tabId);
+  if (session) {
+    session.events.push(event);
+    console.log(`[BackgroundScript] Записано событие: ${event.type}`);
   }
 }
 
-// Сохранять граф каждые 5 минут
-setInterval(() => {
-  if (graph) {
-    chrome.storage.local.set({
-      graphData: graph.toJSON()
-    });
-  }
-}, 5 * 60 * 1000);
+/**
+ * Получить данные сессии
+ */
+function getSessionData(tabId) {
+  const session = activeSessions.get(tabId);
+  if (!session) return null;
 
-console.log('[background.js] Service Worker initialized');
+  return {
+    id: session.id,
+    eventCount: session.events.length,
+    duration: Date.now() - session.startTime,
+    url: session.url,
+    classification: session.classification
+  };
+}
+
+/**
+ * Анализировать сессию
+ */
+function analyzeSession(tabId) {
+  const session = activeSessions.get(tabId);
+  if (!session) return null;
+
+  // Основной анализ
+  const eventTypes = {};
+  session.events.forEach(e => {
+    eventTypes[e.type] = (eventTypes[e.type] || 0) + 1;
+  });
+
+  const pathVariety = new Set(session.events.map(e => `${e.type}`)).size / session.events.length;
+  const hasHoverOrScroll = session.events.some(e => e.type === 'hover' || e.type === 'scroll');
+
+  // Простая наивная классификация
+  let humanScore = 0;
+  if (pathVariety > 0.4) humanScore += 0.25;
+  if (hasHoverOrScroll) humanScore += 0.25;
+  if (session.events.length > 10) humanScore += 0.25;
+  if (Object.keys(eventTypes).length > 2) humanScore += 0.25;
+
+  const prediction = humanScore > 0.6 ? 'HUMAN' : 'BOT';
+
+  return {
+    sessionId: session.id,
+    eventCount: session.events.length,
+    pathVariety: (pathVariety * 100).toFixed(2) + '%',
+    eventTypes,
+    prediction,
+    confidence: Math.abs(humanScore - 0.5) * 2,
+    score: humanScore
+  };
+}
+
+/**
+ * Основные события расширения
+ */
+
+// Очистка сессий при закрытии конключи
+
+chrome.tabs.onRemoved.addListener((tabId) => {
+  const session = activeSessions.get(tabId);
+  if (session) {
+    analyzedSessions.push(session);
+    activeSessions.delete(tabId);
+    console.log(`[BackgroundScript] Сессия ${session.id} сохранена`);
+  }
+});
+
+// Периодическая очистка
+setInterval(() => {
+  console.log(`[BackgroundScript] Активных сессий: ${activeSessions.size}`);
+}, 60000); // каждые минуты
+
+console.log('[BackgroundScript] Нагружен и готов');
