@@ -1,0 +1,45 @@
+{
+  "manifest_version": 3,
+  "name": "Behavior Graph Analyzer",
+  "version": "1.0.0",
+  "description": "Анализ графов поведения пользователей в реальном времени с детекцией ботов",
+  
+  "permissions": [
+    "storage",
+    "tabs",
+    "activeTab"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["src/scripts/content-script.js"],
+      "run_at": "document_start"
+    }
+  ],
+  
+  "background": {
+    "service_worker": "src/scripts/background.js"
+  },
+  
+  "action": {
+    "default_popup": "src/ui/popup.html",
+    "default_title": "Анализ Графа Поведения"
+  },
+  
+  "icons": {
+    "16": "assets/icons/icon-16.png",
+    "48": "assets/icons/icon-48.png",
+    "128": "assets/icons/icon-128.png"
+  },
+  
+  "web_accessible_resources": [
+    {
+      "resources": ["assets/icons/*"],
+      "matches": ["<all_urls>"]
+    }
+  ]
+}
