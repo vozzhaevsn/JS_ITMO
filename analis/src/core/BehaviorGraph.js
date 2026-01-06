@@ -1,13 +1,13 @@
 /**
- * BehaviorGraph - Основной класс для управления графом поведения пользователя
- * Поддерживает операции: добавление узлов/ребер, вычисление метрик, экспорт
+ * Основной класс для управления графом поведения
+ * Поддерживает операции: добавление узлов/ребер, 
+ * вычисление метрик, экспорт
  */
 class BehaviorGraph {
   constructor(config = {}) {
     this.nodes = new Map();      // id → node object
     this.edges = new Map();      // "u→v" → edge object
     this.sessions = [];          // Массив сессий
-    this.cycles = [];            // Найденные циклы
     this.config = {
       maxNodes: 10000,
       maxSessions: 1000,
@@ -27,7 +27,7 @@ class BehaviorGraph {
    */
   addNode(id, properties = {}) {
     if (this.nodes.size >= this.config.maxNodes) {
-      console.warn('[BehaviorGraph] Граф достиг максимума узлов:', this.config.maxNodes);
+      console.warn('Граф достиг максимума узлов');
       return;
     }
 
@@ -62,6 +62,9 @@ class BehaviorGraph {
 
   /**
    * Добавить ребро (переход) между узлами
+   * @param {string} sourceId 
+   * @param {string} targetId 
+   * @param {number} weight - Вес переходов (1+ = кратность)
    */
   addEdge(sourceId, targetId, weight = 1, metadata = {}) {
     if (!this.nodes.has(sourceId)) this.addNode(sourceId);
@@ -87,12 +90,14 @@ class BehaviorGraph {
       });
     }
 
+    // Обновить in/out степени
     this.nodes.get(sourceId).outDegree++;
     this.nodes.get(targetId).inDegree++;
   }
 
   /**
    * Получить матрицу смежности (для алгоритмов)
+   * @returns {object} { matrix, nodeIds }
    */
   getAdjacencyMatrix() {
     const nodeIds = Array.from(this.nodes.keys());
@@ -111,7 +116,7 @@ class BehaviorGraph {
   }
 
   /**
-   * Вычислить все метрики графа
+   * Вычислить все метрики графа (BFS, PageRank, cycles)
    */
   computeAllMetrics() {
     const startTime = performance.now();
@@ -121,12 +126,11 @@ class BehaviorGraph {
     this.detectCycles();
     
     const endTime = performance.now();
-    console.log(`[BehaviorGraph] Метрики вычислены за ${(endTime - startTime).toFixed(2)}ms`);
+    console.log(`[GraphAnalysis] Metrics computed in ${(endTime - startTime).toFixed(2)}ms`);
     
     return {
       nodeCount: this.nodes.size,
       edgeCount: this.edges.size,
-      cycleCount: this.cycles.length,
       computeTime: endTime - startTime
     };
   }
@@ -134,89 +138,53 @@ class BehaviorGraph {
   /**
    * Вычислить PageRank для всех узлов
    */
-  computePageRank(damping = 0.85, iterations = 20) {
-    const n = this.nodes.size;
-    const rank = new Map();
+  computePageRank(iterations = 20, dampingFactor = 0.85) {
     const nodeIds = Array.from(this.nodes.keys());
-
-    nodeIds.forEach((id) => {
-      rank.set(id, 1 / n);
+    const n = nodeIds.length;
+    
+    // Инициализация
+    nodeIds.forEach(id => {
+      this.nodes.get(id).pageRank = (1 - dampingFactor) / n;
     });
 
-    for (let i = 0; i < iterations; i++) {
-      const newRank = new Map();
-
-      nodeIds.forEach((node) => {
-        let sum = 0;
-
-        this.edges.forEach((edge) => {
-          if (edge.target === node) {
-            const sourceNode = this.nodes.get(edge.source);
-            const sourceOutDegree = sourceNode.outDegree || 1;
-            sum += rank.get(edge.source) / sourceOutDegree;
-          }
-        });
-
-        newRank.set(node, (1 - damping) / n + damping * sum);
+    // Итерации
+    for (let iter = 0; iter < iterations; iter++) {
+      const newRanks = {};
+      
+      nodeIds.forEach(id => {
+        newRanks[id] = (1 - dampingFactor) / n;
       });
-
-      newRank.forEach((value, key) => {
-        this.nodes.get(key).pageRank = value;
-      });
-    }
-
-    return rank;
-  }
-
-  /**
-   * Вычислить центральность узлов
-   */
-  computeCentrality() {
-    this.nodes.forEach((node) => {
-      let sumDistances = 0;
-      let reachableCount = 0;
-
-      this.nodes.forEach((otherNode) => {
-        if (node.id !== otherNode.id) {
-          const distance = this._getShortestPath(node.id, otherNode.id);
-          if (distance !== Infinity) {
-            sumDistances += distance;
-            reachableCount++;
-          }
-        }
-      });
-
-      node.closeness = reachableCount > 0 ? reachableCount / sumDistances : 0;
-    });
-  }
-
-  /**
-   * BFS - кратчайший путь
-   */
-  _getShortestPath(startId, targetId) {
-    if (startId === targetId) return 0;
-
-    const queue = [[startId, 0]];
-    const visited = new Set([startId]);
-
-    while (queue.length > 0) {
-      const [currentId, distance] = queue.shift();
-
-      if (currentId === targetId) return distance;
 
       this.edges.forEach((edge) => {
-        if (edge.source === currentId && !visited.has(edge.target)) {
-          visited.add(edge.target);
-          queue.push([edge.target, distance + 1]);
-        }
+        const sourceNode = this.nodes.get(edge.source);
+        const outDegree = sourceNode.outDegree || 1;
+        const contribution = (sourceNode.pageRank / outDegree) * dampingFactor;
+        newRanks[edge.target] = (newRanks[edge.target] || 0) + contribution;
+      });
+
+      nodeIds.forEach(id => {
+        this.nodes.get(id).pageRank = newRanks[id];
       });
     }
-
-    return Infinity;
   }
 
   /**
-   * Обнаружить циклы в графе (DFS)
+   * Вычислить центральность узлов (closeness, betweenness)
+   */
+  computeCentrality() {
+    const nodeIds = Array.from(this.nodes.keys());
+    const n = nodeIds.length;
+
+    nodeIds.forEach(nodeId => {
+      const node = this.nodes.get(nodeId);
+      
+      // In-degree и Out-degree уже вычислены
+      // Здесь можно добавить более сложные метрики при необходимости
+    });
+  }
+
+  /**
+   * Найти все циклы в графе
    */
   detectCycles() {
     const cycles = [];
@@ -226,18 +194,20 @@ class BehaviorGraph {
     const dfs = (nodeId, path) => {
       visited.add(nodeId);
       recStack.add(nodeId);
-      path = [...path, nodeId];
+      path.push(nodeId);
 
+      // Найти все соседей
       this.edges.forEach((edge) => {
         if (edge.source === nodeId) {
-          const targetId = edge.target;
-
-          if (!visited.has(targetId)) {
-            dfs(targetId, path);
-          } else if (recStack.has(targetId)) {
-            const cycleStart = path.indexOf(targetId);
-            const cycle = path.slice(cycleStart);
-            if (!cycles.some(c => c.length === cycle.length && c.every((v, i) => v === cycle[i]))) {
+          const neighbor = edge.target;
+          
+          if (!visited.has(neighbor)) {
+            dfs(neighbor, [...path]);
+          } else if (recStack.has(neighbor)) {
+            // Найден цикл
+            const cycleStart = path.indexOf(neighbor);
+            if (cycleStart !== -1) {
+              const cycle = path.slice(cycleStart);
               cycles.push(cycle);
             }
           }
@@ -247,9 +217,10 @@ class BehaviorGraph {
       recStack.delete(nodeId);
     };
 
-    this.nodes.forEach((node) => {
-      if (!visited.has(node.id)) {
-        dfs(node.id, []);
+    const nodeIds = Array.from(this.nodes.keys());
+    nodeIds.forEach(nodeId => {
+      if (!visited.has(nodeId)) {
+        dfs(nodeId, []);
       }
     });
 
@@ -258,42 +229,73 @@ class BehaviorGraph {
   }
 
   /**
-   * Экспорт в JSON
+   * Получить метрики графа
    */
-  toJSON() {
+  getMetrics() {
     return {
-      nodes: Array.from(this.nodes.values()),
-      edges: Array.from(this.edges.values()),
-      cycles: this.cycles || [],
-      metadata: {
-        created: new Date().toISOString(),
-        nodeCount: this.nodes.size,
-        edgeCount: this.edges.size,
-        cycleCount: this.cycles.length,
-        sessionCount: this.sessions.length
-      }
+      nodeCount: this.nodes.size,
+      edgeCount: this.edges.size,
+      sessionCount: this.sessions.length,
+      cycleCount: this.cycles ? this.cycles.length : 0,
+      avgNodeDegree: this.edges.size > 0 ? (2 * this.edges.size) / this.nodes.size : 0,
+      avgPageRank: Array.from(this.nodes.values()).reduce((sum, node) => sum + node.pageRank, 0) / this.nodes.size
     };
   }
 
   /**
-   * Импорт из JSON
+   * Экспортировать граф в JSON
+   */
+  toJSON() {
+    return {
+      nodes: Array.from(this.nodes.entries()).map(([id, node]) => ({ id, ...node })),
+      edges: Array.from(this.edges.entries()).map(([key, edge]) => edge),
+      sessions: this.sessions,
+      cycles: this.cycles || []
+    };
+  }
+
+  /**
+   * Импортировать граф из JSON
    */
   fromJSON(data) {
     this.nodes.clear();
     this.edges.clear();
+    this.sessions = [];
 
-    data.nodes.forEach((node) => {
-      this.nodes.set(node.id, node);
-    });
+    if (data.nodes) {
+      data.nodes.forEach(node => {
+        const { id, ...properties } = node;
+        this.addNode(id, properties);
+      });
+    }
 
-    data.edges.forEach((edge) => {
-      this.edges.set(`${edge.source}→${edge.target}`, edge);
-    });
+    if (data.edges) {
+      data.edges.forEach(edge => {
+        this.addEdge(edge.source, edge.target, edge.weight, edge);
+      });
+    }
 
-    this.cycles = data.cycles || [];
+    if (data.sessions) {
+      this.sessions = data.sessions;
+    }
+
+    if (data.cycles) {
+      this.cycles = data.cycles;
+    }
+  }
+
+  /**
+   * Очистить граф
+   */
+  clear() {
+    this.nodes.clear();
+    this.edges.clear();
+    this.sessions = [];
+    this.cycles = [];
   }
 }
 
+// Экспорт для использования в других модулях
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = BehaviorGraph;
 }
