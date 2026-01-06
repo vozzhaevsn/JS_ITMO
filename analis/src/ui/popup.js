@@ -1,210 +1,250 @@
-let graph = null;
+/**
+ * Popup Script - УИ для анализа графов
+ */
+
 let cy = null;
-let detector = new BotDetector();
+let currentSession = null;
+let graphData = { nodes: [], edges: [] };
 
-// Инициализировать Cytoscape
-async function initCytoscape() {
-  const data = await chrome.storage.local.get(['graphData']);
-  
-  if (data.graphData) {
-    graph = new BehaviorGraph();
-    graph.fromJSON(data.graphData);
-  } else {
-    graph = new BehaviorGraph();
-  }
-
-  // Подготовить элементы для Cytoscape
-  const elements = [];
-
-  // Добавить узлы
-  graph.nodes.forEach((node) => {
-    elements.push({
-      data: {
-        id: node.id,
-        label: node.label || node.id,
-        visits: node.visits,
-        pageRank: (node.pageRank * 100).toFixed(1)
-      },
-      style: {
-        'background-color': '#667eea',
-        'width': Math.min(40 + node.visits * 2, 100),
-        'height': Math.min(40 + node.visits * 2, 100)
-      }
-    });
-  });
-
-  // Добавить ребра
-  graph.edges.forEach((edge, key) => {
-    elements.push({
-      data: {
-        id: key,
-        source: edge.source,
-        target: edge.target,
-        weight: edge.weight.toFixed(2)
-      },
-      style: {
-        'stroke-width': Math.min(1 + edge.weight * 0.5, 5),
-        'opacity': Math.min(0.3 + edge.count * 0.1, 1)
-      }
-    });
-  });
+/**
+ * Инициализация Cytoscape.js
+ */
+function initCytoscape() {
+  const container = document.getElementById('graph');
+  if (!container) return;
 
   cy = cytoscape({
-    container: document.getElementById('cy'),
-    elements: elements,
+    container: container,
     style: [
       {
         selector: 'node',
         style: {
+          'background-color': '#0891b2',
           'label': 'data(label)',
+          'width': 30,
+          'height': 30,
           'text-valign': 'center',
           'text-halign': 'center',
-          'color': 'white',
           'font-size': 11,
-          'border-width': 2,
-          'border-color': '#764ba2',
-          'background-opacity': 0.9
+          'color': 'white'
         }
       },
       {
         selector: 'edge',
         style: {
-          'curve-style': 'bezier',
+          'line-color': '#999',
+          'target-arrow-color': '#999',
           'target-arrow-shape': 'triangle',
-          'target-arrow-color': '#667eea',
-          'line-color': '#667eea',
-          'arrow-scale': 1.2
+          'width': 2,
+          'opacity': 0.6,
+          'curve-style': 'bezier'
         }
+      },
+      {
+        selector: 'node:selected',
+        style: { 'background-color': '#f97316' }
       }
     ],
     layout: {
-      name: 'cose',
+      name: 'spring',
       directed: true,
-      nodeSpacing: 10,
-      edgeLengthVal: 200,
       animate: true,
       animationDuration: 500
     }
   });
 
-  updateStats();
-  updateSessionsList();
+  // Обработчики элементов
+  cy.on('click', 'node', (event) => {
+    const node = event.target;
+    console.log('Selected node:', node.data('label'));
+  });
+}
+
+/**
+ * Обновить график
+ */
+function updateGraph(data) {
+  if (!cy) return;
+
+  cy.elements().remove();
+
+  const nodes = data.nodes || [];
+  const edges = data.edges || [];
+
+  nodes.forEach(node => {
+    cy.add({
+      data: { id: node.id, label: node.label || node.id }
+    });
+  });
+
+  edges.forEach(edge => {
+    cy.add({
+      data: {
+        id: `${edge.source}-${edge.target}`,
+        source: edge.source,
+        target: edge.target
+      }
+    });
+  });
+
+  cy.layout({
+    name: 'spring',
+    directed: true,
+    animate: true
+  }).run();
+
+  // Обновить статистику
+  updateStats(nodes.length, edges.length);
 }
 
 /**
  * Обновить статистику
  */
-function updateStats() {
-  if (!graph) return;
-  
-  document.getElementById('nodeCount').textContent = graph.nodes.size;
-  document.getElementById('edgeCount').textContent = graph.edges.size;
-  document.getElementById('sessionCount').textContent = graph.sessions.length;
+function updateStats(nodeCount, edgeCount) {
+  document.getElementById('nodeCount').textContent = nodeCount;
+  document.getElementById('edgeCount').textContent = edgeCount;
 
-  const cycles = graph.detectCycles();
-  document.getElementById('cycleCount').textContent = cycles.length;
+  if (currentSession) {
+    document.getElementById('eventCount').textContent = currentSession.eventCount || 0;
 
-  // Классификация
-  if (graph.sessions.length > 0) {
-    const classification = detector.classifyBatch(graph.sessions);
-    document.getElementById('classHuman').textContent = `👤 Human: ${classification.summary.humanPercentage}`;
-    document.getElementById('classBot').textContent = `🤖 Bot: ${classification.summary.bots > 0 ? (classification.summary.bots / classification.summary.total * 100).toFixed(2) : '0'}%`;
+    const duration = currentSession.duration || 0;
+    const seconds = Math.round(duration / 1000);
+    document.getElementById('duration').textContent = seconds + 'с';
   }
 }
 
 /**
- * Обновить список сессий
+ * Обновить классификацию
  */
-function updateSessionsList() {
-  if (!graph) return;
-  
-  const listEl = document.getElementById('sessionsList');
-  listEl.innerHTML = '';
+function updateClassification(analysis) {
+  const badge = document.getElementById('classResult');
+  const confidence = document.getElementById('confidence');
+  const confidenceText = document.getElementById('confidenceText');
 
-  graph.sessions.slice(-5).forEach((session, idx) => {
-    const item = document.createElement('div');
-    item.className = 'session-item';
-    item.innerHTML = `<strong>Session ${idx + 1}</strong><br>
-                      ${session.path.length} переходов<br>
-                      ${new Date(session.timestamp).toLocaleTimeString()}`;
-    item.addEventListener('click', () => highlightSession(session));
-    listEl.appendChild(item);
+  if (!analysis) return;
+
+  const prediction = analysis.prediction || 'UNKNOWN';
+  const score = analysis.score || 0;
+
+  badge.textContent = prediction;
+  badge.className = 'class-badge ' + (prediction === 'HUMAN' ? 'human' : 'bot');
+
+  const percent = Math.round(score * 100);
+  document.querySelector('.confidence-bar').style.width = percent + '%';
+  confidenceText.textContent = percent + '%';
+}
+
+/**
+ * Анализировать текущую сессию
+ */
+function analyzeCurrentSession() {
+  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+    const tabId = tabs[0].id;
+    chrome.tabs.sendMessage(
+      tabId,
+      { type: 'ANALYZE_SESSION' },
+      (response) => {
+        if (chrome.runtime.lastError) {
+          console.warn('Error:', chrome.runtime.lastError);
+          return;
+        }
+
+        if (response) {
+          currentSession = response;
+          updateClassification(response);
+          
+          if (response.eventTypes) {
+            updateMetrics(response);
+          }
+        }
+      }
+    );
   });
 }
 
 /**
- * Выделить сессию
+ * Обновить метрики
  */
-function highlightSession(session) {
-  if (cy) {
-    cy.elements().style('opacity', 0.3);
+function updateMetrics(analysis) {
+  const metricsDiv = document.getElementById('metrics');
+  if (!metricsDiv || !analysis) return;
+
+  metricsDiv.innerHTML = '';
+  const metrics = [
+    { label: 'Path Variety', value: analysis.pathVariety },
+    { label: 'Events', value: analysis.eventCount }
+  ];
+
+  metrics.forEach(m => {
+    const div = document.createElement('div');
+    div.className = 'metric-item';
+    div.innerHTML = `<span>${m.label}:</span><strong>${m.value}</strong>`;
+    metricsDiv.appendChild(div);
+  });
+}
+
+/**
+ * Экспортировать данные
+ */
+function exportData() {
+  if (!currentSession) {
+    alert('Nothings to export');
+    return;
+  }
+
+  const jsonData = JSON.stringify(currentSession, null, 2);
+  const blob = new Blob([jsonData], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `session_${currentSession.sessionId || Date.now()}.json`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+/**
+ * Очистить данные
+ */
+function clearData() {
+  if (confirm('Очистить все данные?')) {
+    currentSession = null;
+    if (cy) cy.elements().remove();
     
-    session.path.forEach((nodeId) => {
-      cy.getElementById(nodeId).style('opacity', 1);
-    });
+    document.getElementById('nodeCount').textContent = '0';
+    document.getElementById('edgeCount').textContent = '0';
+    document.getElementById('eventCount').textContent = '0';
+    document.getElementById('duration').textContent = '0с';
+    document.getElementById('classResult').textContent = '-';
+    document.getElementById('confidenceText').textContent = '-';
   }
 }
 
-// Event Listeners
-document.getElementById('layoutBtn')?.addEventListener('click', () => {
-  if (cy) {
-    cy.layout({ name: 'cose', directed: true, animate: true }).run();
-  }
+/**
+ * Обновить время
+ */
+function updateTime() {
+  const now = new Date();
+  const time = now.toLocaleTimeString('ru-RU');
+  document.getElementById('time').textContent = time;
+}
+
+/**
+ * Инициализация оборудования
+ */
+document.addEventListener('DOMContentLoaded', () => {
+  initCytoscape();
+
+  // Оборудование
+  document.getElementById('btnAnalyze').addEventListener('click', analyzeCurrentSession);
+  document.getElementById('btnExport').addEventListener('click', exportData);
+  document.getElementById('btnClear').addEventListener('click', clearData);
+
+  // Обновлять время
+  updateTime();
+  setInterval(updateTime, 1000);
+
+  // Потромить данные сессии
+  analyzeCurrentSession();
 });
-
-document.getElementById('zoomFit')?.addEventListener('click', () => {
-  if (cy) cy.fit();
-});
-
-document.getElementById('centerView')?.addEventListener('click', () => {
-  if (cy) cy.center();
-});
-
-document.getElementById('exportBtn')?.addEventListener('click', () => {
-  if (graph) {
-    const json = JSON.stringify(graph.toJSON(), null, 2);
-    const blob = new Blob([json], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `graph-${Date.now()}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-  }
-});
-
-document.getElementById('clearBtn')?.addEventListener('click', () => {
-  if (confirm('Очистить все данные?')) {
-    graph = new BehaviorGraph();
-    chrome.storage.local.remove(['graphData']);
-    location.reload();
-  }
-});
-
-document.getElementById('analyzeBtn')?.addEventListener('click', () => {
-  if (graph) {
-    const metrics = graph.computeAllMetrics();
-    const cycles = graph.detectCycles();
-    const pageRanks = graph.computePageRank();
-
-    alert(`Анализ завершен:
-- Циклов найдено: ${cycles.length}
-- Средняя длина цикла: ${cycles.length > 0 ? (cycles.reduce((a, b) => a + b.length, 0) / cycles.length).toFixed(2) : 0}
-- Время вычисления: ${metrics.computeTime.toFixed(2)}ms
-- Узлы с высоким PageRank: ${Array.from(pageRanks.entries())
-        .sort((a, b) => b[1] - a[1])
-        .slice(0, 3)
-        .map(([id, rank]) => `${id} (${(rank * 100).toFixed(1)}%)`)
-        .join(', ')}`);
-  }
-});
-
-// Слушать обновления данных
-chrome.storage.onChanged.addListener((changes, areaName) => {
-  if (areaName === 'local' && changes.graphData) {
-    initCytoscape();
-  }
-});
-
-// Инициализация при загрузке
-document.addEventListener('DOMContentLoaded', initCytoscape);
