@@ -1,100 +1,178 @@
 /**
  * Popup Script - УИ для анализа графов
+ * Оптимизировано для Comet: Canvas без CDN
  */
 
-let cy = null;
+let canvas = null;
+let ctx = null;
 let currentSession = null;
 let graphData = { nodes: [], edges: [] };
+let nodePositions = new Map();
 
 /**
- * Инициализация Cytoscape.js
+ * Инициализировать Canvas для вывода графов
  */
-function initCytoscape() {
-  const container = document.getElementById('graph');
-  if (!container) return;
+function initCanvas() {
+  canvas = document.getElementById('graphCanvas');
+  if (!canvas) return;
 
-  cy = cytoscape({
-    container: container,
-    style: [
-      {
-        selector: 'node',
-        style: {
-          'background-color': '#0891b2',
-          'label': 'data(label)',
-          'width': 30,
-          'height': 30,
-          'text-valign': 'center',
-          'text-halign': 'center',
-          'font-size': 11,
-          'color': 'white'
-        }
-      },
-      {
-        selector: 'edge',
-        style: {
-          'line-color': '#999',
-          'target-arrow-color': '#999',
-          'target-arrow-shape': 'triangle',
-          'width': 2,
-          'opacity': 0.6,
-          'curve-style': 'bezier'
-        }
-      },
-      {
-        selector: 'node:selected',
-        style: { 'background-color': '#f97316' }
-      }
-    ],
-    layout: {
-      name: 'spring',
-      directed: true,
-      animate: true,
-      animationDuration: 500
+  ctx = canvas.getContext('2d');
+  
+  // Отрисовать приветственную скрину
+  drawEmptyGraph();
+  
+  // Обработка наведения для интерактивности
+  canvas.addEventListener('mousemove', handleCanvasMouseMove);
+  canvas.addEventListener('click', handleCanvasClick);
+}
+
+/**
+ * Нарисовать пустой граф
+ */
+function drawEmptyGraph() {
+  if (!ctx || !canvas) return;
+  
+  const w = canvas.width;
+  const h = canvas.height;
+  
+  // Очистить canvas
+  ctx.clearRect(0, 0, w, h);
+  
+  // Нарисовать сетку (попеременные линии)
+  ctx.strokeStyle = '#e5e7eb';
+  ctx.lineWidth = 0.5;
+  
+  for (let i = 0; i < w; i += 40) {
+    ctx.beginPath();
+    ctx.moveTo(i, 0);
+    ctx.lineTo(i, h);
+    ctx.stroke();
+  }
+  
+  for (let i = 0; i < h; i += 40) {
+    ctx.beginPath();
+    ctx.moveTo(0, i);
+    ctx.lineTo(w, i);
+    ctx.stroke();
+  }
+  
+  // Нарисовать строку "событий нет"
+  ctx.fillStyle = '#9ca3af';
+  ctx.font = '14px Arial';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('Событий нет. Наведитесь на страницу и выполните действия', w / 2, h / 2);
+}
+
+/**
+ * Нарисовать граф в Canvas
+ */
+function drawGraph() {
+  if (!ctx || !canvas) return;
+  
+  const w = canvas.width;
+  const h = canvas.height;
+  
+  // Очистить
+  ctx.clearRect(0, 0, w, h);
+  
+  // Рнисовать ребра
+  graphData.edges.forEach(edge => {
+    const source = nodePositions.get(edge.source);
+    const target = nodePositions.get(edge.target);
+    
+    if (source && target) {
+      ctx.strokeStyle = '#cbd5e1';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(source.x, source.y);
+      ctx.lineTo(target.x, target.y);
+      ctx.stroke();
+      
+      // Рисовать стрелку
+      drawArrow(source.x, source.y, target.x, target.y);
     }
   });
-
-  // Обработчики элементов
-  cy.on('click', 'node', (event) => {
-    const node = event.target;
-    console.log('Selected node:', node.data('label'));
+  
+  // Нарисовать узлы
+  graphData.nodes.forEach(node => {
+    const pos = nodePositions.get(node.id);
+    if (pos) {
+      // Круг
+      ctx.fillStyle = '#0891b2';
+      ctx.beginPath();
+      ctx.arc(pos.x, pos.y, 15, 0, Math.PI * 2);
+      ctx.fill();
+      
+      // Лейбла
+      ctx.fillStyle = 'white';
+      ctx.font = 'bold 11px Arial';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      const label = (node.label || node.id).substring(0, 3);
+      ctx.fillText(label, pos.x, pos.y);
+    }
   });
+}
+
+/**
+ * Нарисовать стрелку ребра
+ */
+function drawArrow(fromX, fromY, toX, toY) {
+  if (!ctx) return;
+  
+  const headlen = 15;
+  const angle = Math.atan2(toY - fromY, toX - fromX);
+  
+  ctx.strokeStyle = '#cbd5e1';
+  ctx.fillStyle = '#cbd5e1';
+  ctx.beginPath();
+  ctx.moveTo(toX - headlen * Math.cos(angle - Math.PI / 6), toY - headlen * Math.sin(angle - Math.PI / 6));
+  ctx.lineTo(toX, toY);
+  ctx.lineTo(toX - headlen * Math.cos(angle + Math.PI / 6), toY - headlen * Math.sin(angle + Math.PI / 6));
+  ctx.fill();
+}
+
+/**
+ * Обновить позиции узлов (simple layout)
+ */
+function layoutNodes() {
+  if (!canvas) return;
+  
+  const w = canvas.width;
+  const h = canvas.height;
+  const centerX = w / 2;
+  const centerY = h / 2;
+  const radius = Math.min(w, h) / 3;
+  
+  // Расположить ноды по кругу
+  graphData.nodes.forEach((node, index) => {
+    const angle = (index / Math.max(graphData.nodes.length, 1)) * Math.PI * 2;
+    const x = centerX + radius * Math.cos(angle);
+    const y = centerY + radius * Math.sin(angle);
+    
+    nodePositions.set(node.id, { x, y });
+  });
+  
+  // Нарисовать граф
+  drawGraph();
 }
 
 /**
  * Обновить график
  */
 function updateGraph(data) {
-  if (!cy) return;
-
-  cy.elements().remove();
-
-  const nodes = data.nodes || [];
-  const edges = data.edges || [];
-
-  nodes.forEach(node => {
-    cy.add({
-      data: { id: node.id, label: node.label || node.id }
-    });
-  });
-
-  edges.forEach(edge => {
-    cy.add({
-      data: {
-        id: `${edge.source}-${edge.target}`,
-        source: edge.source,
-        target: edge.target
-      }
-    });
-  });
-
-  cy.layout({
-    name: 'spring',
-    directed: true,
-    animate: true
-  }).run();
-
+  graphData = data || { nodes: [], edges: [] };
+  nodePositions.clear();
+  
+  if (graphData.nodes.length === 0) {
+    drawEmptyGraph();
+  } else {
+    layoutNodes();
+  }
+  
   // Обновить статистику
-  updateStats(nodes.length, edges.length);
+  updateStats(graphData.nodes.length, graphData.edges.length);
 }
 
 /**
@@ -118,7 +196,6 @@ function updateStats(nodeCount, edgeCount) {
  */
 function updateClassification(analysis) {
   const badge = document.getElementById('classResult');
-  const confidence = document.getElementById('confidence');
   const confidenceText = document.getElementById('confidenceText');
 
   if (!analysis) return;
@@ -130,57 +207,112 @@ function updateClassification(analysis) {
   badge.className = 'class-badge ' + (prediction === 'HUMAN' ? 'human' : 'bot');
 
   const percent = Math.round(score * 100);
-  document.querySelector('.confidence-bar').style.width = percent + '%';
+  document.querySelector('#confidence .confidence-bar').style.width = percent + '%';
   confidenceText.textContent = percent + '%';
+  
+  // Обновить метрики
+  if (analysis.pathVariety !== undefined) {
+    document.getElementById('metricPathVariety').textContent = analysis.pathVariety.toFixed(2);
+  }
+  if (analysis.averageTiming !== undefined) {
+    document.getElementById('metricAvgTiming').textContent = Math.round(analysis.averageTiming) + 'мс';
+  }
+  if (analysis.variance !== undefined) {
+    document.getElementById('metricVariance').textContent = analysis.variance.toFixed(2);
+  }
+  if (analysis.hasComplexCycles !== undefined) {
+    document.getElementById('metricComplexCycles').textContent = analysis.hasComplexCycles ? 'Да' : 'Нет';
+  }
 }
 
 /**
  * Анализировать текущую сессию
  */
 function analyzeCurrentSession() {
-  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-    const tabId = tabs[0].id;
-    chrome.tabs.sendMessage(
-      tabId,
-      { type: 'ANALYZE_SESSION' },
-      (response) => {
-        if (chrome.runtime.lastError) {
-          console.warn('Error:', chrome.runtime.lastError);
-          return;
-        }
+  try {
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      if (chrome.runtime.lastError) {
+        console.warn('Ошибка получения таба:', chrome.runtime.lastError);
+        return;
+      }
+      
+      if (!tabs || tabs.length === 0) return;
+      
+      const tabId = tabs[0].id;
+      
+      // Получить данные из background
+      chrome.runtime.sendMessage(
+        { type: 'GET_SESSION_DATA' },
+        (response) => {
+          if (chrome.runtime.lastError) {
+            console.warn('Ошибка sendMessage:', chrome.runtime.lastError);
+            return;
+          }
 
-        if (response) {
-          currentSession = response;
-          updateClassification(response);
-          
-          if (response.eventTypes) {
-            updateMetrics(response);
+          if (response) {
+            currentSession = response;
+            
+            // Обновить отображение
+            if (response.graphData) {
+              updateGraph(response.graphData);
+            }
+            
+            if (response.analysis) {
+              updateClassification(response.analysis);
+            }
+            
+            // Обновить список событий
+            if (response.events) {
+              updateEventsList(response.events);
+            }
           }
         }
-      }
-    );
+      );
+    });
+  } catch (error) {
+    console.warn('Ошибка analyzeCurrentSession:', error);
+  }
+}
+
+/**
+ * Обновить список событий
+ */
+function updateEventsList(events) {
+  const eventsList = document.getElementById('eventsList');
+  if (!eventsList) return;
+  
+  eventsList.innerHTML = '';
+  
+  if (!events || events.length === 0) {
+    eventsList.innerHTML = '<p style="color: #999; font-size: 12px; padding: 10px;"> Событий нет</p>';
+    return;
+  }
+  
+  // Показать последние 10 событий
+  const recentEvents = events.slice(-10).reverse();
+  
+  recentEvents.forEach(event => {
+    const div = document.createElement('div');
+    div.style.fontSize = '12px';
+    div.style.padding = '5px';
+    div.style.borderBottom = '1px solid #e5e7eb';
+    div.textContent = `${event.type} → ${event.selector || 'page'}`;
+    eventsList.appendChild(div);
   });
 }
 
 /**
- * Обновить метрики
+ * Обработка движения мыши на Canvas
  */
-function updateMetrics(analysis) {
-  const metricsDiv = document.getElementById('metrics');
-  if (!metricsDiv || !analysis) return;
+function handleCanvasMouseMove(e) {
+  // На основании этого можно добавить наведение и тоолтипы
+}
 
-  metricsDiv.innerHTML = '';
-  const metrics = [
-    { label: 'Path Variety', value: analysis.pathVariety },
-    { label: 'Events', value: analysis.eventCount }
-  ];
-
-  metrics.forEach(m => {
-    const div = document.createElement('div');
-    div.className = 'metric-item';
-    div.innerHTML = `<span>${m.label}:</span><strong>${m.value}</strong>`;
-    metricsDiv.appendChild(div);
-  });
+/**
+ * Обработка клика на Canvas
+ */
+function handleCanvasClick(e) {
+  // На основании этого можно выбрать узлы
 }
 
 /**
@@ -188,7 +320,7 @@ function updateMetrics(analysis) {
  */
 function exportData() {
   if (!currentSession) {
-    alert('Nothings to export');
+    alert('Нет данных для экспорта');
     return;
   }
 
@@ -210,7 +342,10 @@ function exportData() {
 function clearData() {
   if (confirm('Очистить все данные?')) {
     currentSession = null;
-    if (cy) cy.elements().remove();
+    graphData = { nodes: [], edges: [] };
+    nodePositions.clear();
+    
+    drawEmptyGraph();
     
     document.getElementById('nodeCount').textContent = '0';
     document.getElementById('edgeCount').textContent = '0';
@@ -218,6 +353,7 @@ function clearData() {
     document.getElementById('duration').textContent = '0с';
     document.getElementById('classResult').textContent = '-';
     document.getElementById('confidenceText').textContent = '-';
+    document.getElementById('eventsList').innerHTML = '';
   }
 }
 
@@ -231,20 +367,25 @@ function updateTime() {
 }
 
 /**
- * Инициализация оборудования
+ * Инициализация
  */
 document.addEventListener('DOMContentLoaded', () => {
-  initCytoscape();
+  try {
+    // Отрисовать Canvas
+    initCanvas();
 
-  // Оборудование
-  document.getElementById('btnAnalyze').addEventListener('click', analyzeCurrentSession);
-  document.getElementById('btnExport').addEventListener('click', exportData);
-  document.getElementById('btnClear').addEventListener('click', clearData);
+    // Обычные события
+    document.getElementById('btnAnalyze')?.addEventListener('click', analyzeCurrentSession);
+    document.getElementById('btnExport')?.addEventListener('click', exportData);
+    document.getElementById('btnClear')?.addEventListener('click', clearData);
 
-  // Обновлять время
-  updateTime();
-  setInterval(updateTime, 1000);
+    // Обновлять время
+    updateTime();
+    setInterval(updateTime, 1000);
 
-  // Потромить данные сессии
-  analyzeCurrentSession();
+    // Получить данные сессии
+    analyzeCurrentSession();
+  } catch (error) {
+    console.error('Ошибка инициализации popup.js:', error);
+  }
 });
