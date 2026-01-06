@@ -59,7 +59,7 @@ let updateTimer = null;
 // ─────────────────────────────────────────────────
 
 function init() {
-  console.log('[Popup] Initializing popup');
+  console.log('[Popup] 🚀 Initializing popup');
   
   // Load initial session data
   loadSessionData();
@@ -83,93 +83,153 @@ function setupEventListeners() {
   elements.exportJsonBtn.addEventListener('click', () => exportData('json'));
   elements.exportCsvBtn.addEventListener('click', () => exportData('csv'));
   elements.exportPngBtn.addEventListener('click', () => exportData('png'));
+  
+  console.log('[Popup] 🎯 Event listeners attached');
 }
 
 // ─────────────────────────────────────────────────
-// Session Data Loading
+// Session Data Loading (Level 1: Fixed)
 // ─────────────────────────────────────────────────
 
 function loadSessionData() {
-  console.log('[Popup] Loading session data from background');
+  console.log('[Popup] 📥 Loading session data from background');
   
-  chrome.runtime.sendMessage({ type: 'GET_SESSION' }, function(response) {
-    if (chrome.runtime.lastError) {
-      console.error('[Popup] Error:', chrome.runtime.lastError);
-      showError('Failed to load session data');
-      return;
-    }
-    
-    if (response && response.session) {
-      currentSession = response.session;
-      currentEvents = response.session.events || [];
-      
-      console.log('[Popup] ✅ Session loaded:', {
-        events: currentEvents.length,
-        stats: response.session.stats
-      });
-      
-      updateSessionInfo();
-    } else {
-      console.log('[Popup] No session data available');
-      showError('No session data available');
-    }
-  });
+  // Wait a bit for session to be initialized
+  setTimeout(() => {
+    chrome.runtime.sendMessage(
+      { type: 'GET_SESSION' },
+      function(response) {
+        if (chrome.runtime.lastError) {
+          console.error('[Popup] ❌ Message error:', chrome.runtime.lastError);
+          showError('Failed to connect to background script');
+          return;
+        }
+        
+        console.log('[Popup] 📨 Response received:', response);
+        
+        if (!response) {
+          console.log('[Popup] ⚠️ Empty response from background');
+          showError('No response from background script');
+          return;
+        }
+        
+        if (!response.success) {
+          console.log('[Popup] ⚠️ Response not successful');
+          showError('Failed to load session: ' + (response.error || 'Unknown error'));
+          return;
+        }
+        
+        if (!response.session) {
+          console.log('[Popup] ⚠️ No session in response');
+          showError('No session data available. Click elements on the page first!');
+          return;
+        }
+        
+        // Store session data
+        currentSession = response.session;
+        currentEvents = response.session.events || [];
+        
+        console.log('[Popup] ✅ Session loaded:', {
+          id: currentSession.id,
+          url: currentSession.url,
+          eventCount: currentEvents.length,
+          stats: currentSession.stats
+        });
+        
+        updateSessionInfo();
+      }
+    );
+  }, 300); // Wait 300ms for session to initialize
 }
 
 function updateSessionInfo() {
-  if (!currentSession) return;
+  if (!currentSession) {
+    console.log('[Popup] No session to display');
+    return;
+  }
   
-  // Update basic info
-  const sessionIdShort = currentSession.id.substring(0, 12) + '...';
-  elements.sessionId.textContent = sessionIdShort;
-  elements.pageUrl.textContent = currentSession.url || 'No page loaded';
-  elements.eventCount.textContent = currentSession.eventCount || '0';
-  
-  // Update session time
-  if (currentSession.startTime) {
-    const duration = Math.floor((Date.now() - currentSession.startTime) / 1000);
-    elements.sessionTime.textContent = formatTime(duration);
+  try {
+    // Update basic info
+    const sessionIdShort = currentSession.id.substring(0, 12) + '...';
+    if (elements.sessionId) elements.sessionId.textContent = sessionIdShort;
+    if (elements.pageUrl) elements.pageUrl.textContent = currentSession.url || 'No page loaded';
+    if (elements.eventCount) elements.eventCount.textContent = currentSession.eventCount || currentEvents.length || '0';
+    
+    // Update session time
+    if (currentSession.startTime && elements.sessionTime) {
+      const duration = Math.floor((Date.now() - currentSession.startTime) / 1000);
+      elements.sessionTime.textContent = formatTime(duration);
+    }
+  } catch (error) {
+    console.error('[Popup] Error updating session info:', error);
   }
 }
 
 // ─────────────────────────────────────────────────
-// Analyze Handler
+// Analyze Handler (Level 1: Improved)
 // ─────────────────────────────────────────────────
 
 function handleAnalyzeClick() {
-  console.log('[Popup] Analyze button clicked');
+  console.log('[Popup] 🔍 Analyze button clicked');
   
-  if (!currentEvents || currentEvents.length === 0) {
-    showError('⚠️ No events to analyze. Click some elements on the page!');
-    return;
-  }
+  // Refresh data before analyzing
+  console.log('[Popup] 🔄 Refreshing data from background...');
   
-  showLoading(true);
-  
-  try {
-    // Build graph from events
-    currentGraph = buildGraph(currentEvents);
-    
-    // Calculate metrics
-    const metrics = calculateMetrics(currentGraph);
-    
-    // Display results
-    displayMetrics(metrics);
-    displayGraph(currentGraph);
-    displayEventStats(currentSession.stats || {});
-    
-    // Show export actions
-    elements.exportActions.style.display = 'block';
-    
-    showSuccess('🌟 Graph generated successfully!');
-    console.log('[Popup] Analysis complete:', metrics);
-    
-  } catch (error) {
-    console.error('[Popup] Analysis error:', error);
-    showError('Error analyzing data: ' + error.message);
-  } finally {
-    showLoading(false);
-  }
+  chrome.runtime.sendMessage(
+    { type: 'GET_SESSION' },
+    function(response) {
+      if (chrome.runtime.lastError) {
+        console.error('[Popup] ❌ Error:', chrome.runtime.lastError);
+        showError('Failed to load data');
+        return;
+      }
+      
+      if (!response || !response.session) {
+        console.log('[Popup] ⚠️ No session data');
+        showError('⚠️ No events to analyze. Click some elements on the page first!');
+        return;
+      }
+      
+      // Update current data
+      currentSession = response.session;
+      currentEvents = response.session.events || [];
+      
+      console.log('[Popup] 📊 Data refreshed:', currentEvents.length, 'events');
+      
+      if (currentEvents.length === 0) {
+        showError('⚠️ No events collected yet. Interact with the page first!');
+        return;
+      }
+      
+      showLoading(true);
+      
+      try {
+        // Build graph from events
+        console.log('[Popup] 🔨 Building graph...');
+        currentGraph = buildGraph(currentEvents);
+        
+        // Calculate metrics
+        const metrics = calculateMetrics(currentGraph);
+        
+        // Display results
+        displayMetrics(metrics);
+        displayGraph(currentGraph);
+        displayEventStats(currentSession.stats || {});
+        
+        // Show export actions
+        elements.exportActions.style.display = 'block';
+        
+        showSuccess('🌟 Graph generated successfully! (' + currentEvents.length + ' events)');
+        console.log('[Popup] ✅ Analysis complete:', metrics);
+        
+      } catch (error) {
+        console.error('[Popup] ❌ Analysis error:', error);
+        showError('Error analyzing data: ' + error.message);
+      } finally {
+        showLoading(false);
+      }
+    }
+  );
 }
 
 // ─────────────────────────────────────────────────
@@ -207,6 +267,8 @@ function buildGraph(events) {
     }
   }
   
+  console.log('[Popup] 📊 Graph built:', nodes.size, 'nodes,', edges.length, 'edges');
+  
   return {
     nodes: Array.from(nodes.values()),
     edges: edges,
@@ -237,10 +299,10 @@ function calculateMetrics(graph) {
 
 function displayMetrics(metrics) {
   elements.metricsCard.style.display = 'block';
-  elements.nodeCount.textContent = metrics.nodeCount;
-  elements.edgeCount.textContent = metrics.edgeCount;
-  elements.avgDegree.textContent = metrics.avgDegree;
-  elements.graphDensity.textContent = metrics.density;
+  if (elements.nodeCount) elements.nodeCount.textContent = metrics.nodeCount;
+  if (elements.edgeCount) elements.edgeCount.textContent = metrics.edgeCount;
+  if (elements.avgDegree) elements.avgDegree.textContent = metrics.avgDegree;
+  if (elements.graphDensity) elements.graphDensity.textContent = metrics.density;
 }
 
 // ─────────────────────────────────────────────────
@@ -248,13 +310,15 @@ function displayMetrics(metrics) {
 // ─────────────────────────────────────────────────
 
 function displayGraph(graph) {
-  if (graph.nodeCount === 0) {
-    elements.canvasInfo.textContent = 'No nodes to display';
+  if (!graph || graph.nodeCount === 0) {
+    if (elements.canvasInfo) {
+      elements.canvasInfo.textContent = 'No nodes to display';
+    }
     return;
   }
   
   elements.graphCard.style.display = 'block';
-  elements.canvasInfo.style.display = 'none';
+  if (elements.canvasInfo) elements.canvasInfo.style.display = 'none';
   
   const canvas = elements.graphCanvas;
   const ctx = canvas.getContext('2d');
@@ -310,7 +374,7 @@ function displayGraph(graph) {
     ctx.fillText(label, node.x, node.y + size + 15);
   });
   
-  console.log('[Popup] Graph rendered:', graph.nodeCount, 'nodes,', graph.edgeCount, 'edges');
+  console.log('[Popup] 🎨 Graph rendered:', graph.nodeCount, 'nodes,', graph.edgeCount, 'edges');
 }
 
 // ─────────────────────────────────────────────────
@@ -319,6 +383,7 @@ function displayGraph(graph) {
 
 function displayEventStats(stats) {
   if (!stats || Object.keys(stats).length === 0) {
+    console.log('[Popup] No stats to display');
     return;
   }
   
@@ -334,6 +399,8 @@ function displayEventStats(stats) {
     `;
     elements.eventStats.appendChild(row);
   });
+  
+  console.log('[Popup] 📈 Stats displayed:', stats);
 }
 
 // ─────────────────────────────────────────────────
@@ -341,7 +408,7 @@ function displayEventStats(stats) {
 // ─────────────────────────────────────────────────
 
 function handleClearClick() {
-  console.log('[Popup] Clear button clicked');
+  console.log('[Popup] 🗑️ Clear button clicked');
   
   chrome.runtime.sendMessage({ type: 'CLEAR_SESSION' }, function(response) {
     if (response && response.success) {
@@ -356,11 +423,11 @@ function handleClearClick() {
       elements.exportActions.style.display = 'none';
       
       // Reset info
-      elements.eventCount.textContent = '0';
-      elements.sessionId.textContent = 'Session cleared';
+      if (elements.eventCount) elements.eventCount.textContent = '0';
+      if (elements.sessionId) elements.sessionId.textContent = 'Session cleared';
       
       showSuccess('🗑️ Session cleared successfully!');
-      console.log('[Popup] Session cleared');
+      console.log('[Popup] ✅ Session cleared');
     }
   });
 }
@@ -370,7 +437,7 @@ function handleClearClick() {
 // ─────────────────────────────────────────────────
 
 function exportData(format) {
-  console.log('[Popup] Exporting data as', format);
+  console.log('[Popup] 💾 Exporting data as', format);
   
   if (!currentEvents || currentEvents.length === 0) {
     showError('No data to export');
@@ -398,9 +465,10 @@ function exportData(format) {
     
     downloadFile(content, filename);
     showSuccess(`✅ Exported as ${format.toUpperCase()}`);
+    console.log('[Popup] ✅ Export successful:', filename);
     
   } catch (error) {
-    console.error('[Popup] Export error:', error);
+    console.error('[Popup] ❌ Export error:', error);
     showError('Export failed: ' + error.message);
   }
 }
@@ -446,21 +514,37 @@ function downloadFile(content, filename) {
 // ─────────────────────────────────────────────────
 
 function showLoading(show) {
-  elements.loading.style.display = show ? 'flex' : 'none';
+  if (elements.loading) {
+    elements.loading.style.display = show ? 'flex' : 'none';
+  }
 }
 
 function showError(message) {
-  elements.error.textContent = message;
-  elements.error.style.display = 'block';
-  elements.success.style.display = 'none';
-  setTimeout(() => { elements.error.style.display = 'none'; }, 5000);
+  console.error('[Popup] ❌', message);
+  if (elements.error) {
+    elements.error.textContent = message;
+    elements.error.style.display = 'block';
+  }
+  if (elements.success) {
+    elements.success.style.display = 'none';
+  }
+  setTimeout(() => {
+    if (elements.error) elements.error.style.display = 'none';
+  }, 5000);
 }
 
 function showSuccess(message) {
-  elements.success.textContent = message;
-  elements.success.style.display = 'block';
-  elements.error.style.display = 'none';
-  setTimeout(() => { elements.success.style.display = 'none'; }, 4000);
+  console.log('[Popup] ✅', message);
+  if (elements.success) {
+    elements.success.textContent = message;
+    elements.success.style.display = 'block';
+  }
+  if (elements.error) {
+    elements.error.style.display = 'none';
+  }
+  setTimeout(() => {
+    if (elements.success) elements.success.style.display = 'none';
+  }, 4000);
 }
 
 // ─────────────────────────────────────────────────
@@ -480,6 +564,7 @@ function formatTime(seconds) {
 
 window.addEventListener('unload', () => {
   if (updateTimer) clearInterval(updateTimer);
+  console.log('[Popup] Popup unloading');
 });
 
 // ─────────────────────────────────────────────────
