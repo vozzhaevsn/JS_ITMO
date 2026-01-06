@@ -1,267 +1,187 @@
-/**
- * Content Script - запускается на всех веб-страницах
- * Ответствен за: сбор данных, отправка background
- * Совместимо с: Chrome, Comet, и другими Chromium-based браузерами
- */
+// ================================================
+// BEHAVIOR GRAPH ANALYZER - CONTENT SCRIPT
+// ================================================
 
-console.log('[ContentScript] Нагружен');
+console.log('[ContentScript] ✅ Content script loaded');
 
-// Полифилл для Element.prototype.matches() для совместимости
-if (!Element.prototype.matches) {
-  Element.prototype.matches = Element.prototype.msMatchesSelector || 
-                              Element.prototype.webkitMatchesSelector;
-}
+// ─────────────────────────────────────────────────
+// Configuration
+// ─────────────────────────────────────────────────
 
-// Проверить доступность chrome API
-const hasChromeAPI = () => {
-  return typeof chrome !== 'undefined' && 
-         chrome.runtime && 
-         typeof chrome.runtime.sendMessage === 'function';
+const CONFIG = {
+  TRACKED_EVENTS: ['click', 'dblclick', 'mouseenter', 'mouseleave', 'scroll', 'input', 'change', 'focus', 'blur', 'keydown'],
+  DEBOUNCE_TIME: 100,
+  DEBUG: true,
 };
 
-if (!window.__BEHAVIOR_GRAPH_LOADED__) {
-  window.__BEHAVIOR_GRAPH_LOADED__ = true;
+// ─────────────────────────────────────────────────
+// State Management
+// ─────────────────────────────────────────────────
 
-  /**
-   * Безопасная отправка сообщения background скрипту
-   * С обработкой ошибок для разных браузеров
-   */
-  function sendMessage(type, data) {
-    // Проверить доступность API
-    if (!hasChromeAPI()) {
-      console.warn('[ContentScript] chrome.runtime API недоступен');
-      return;
-    }
+let lastEventTime = 0;
+let isInitialized = false;
+let trackedElements = new Set();
 
-    try {
-      chrome.runtime.sendMessage(
-        { type, data },
-        (response) => {
-          if (chrome.runtime.lastError) {
-            // Это нормально - сообщение всё равно отправлено
-            if (chrome.runtime.lastError.message.includes('close')) {
-              console.log('[ContentScript] Background скрипт неактивен');
-            }
-          }
-        }
-      );
-    } catch (error) {
-      console.warn('[ContentScript] Ошибка sendMessage:', error.message);
+// ─────────────────────────────────────────────────
+// Initialization
+// ─────────────────────────────────────────────────
+
+function initialize() {
+  if (isInitialized) return;
+  isInitialized = true;
+  
+  console.log('[ContentScript] ✅ Tracking initialized');
+  
+  // Send page loaded event
+  chrome.runtime.sendMessage({
+    type: 'PAGE_LOADED',
+    url: window.location.href,
+    title: document.title,
+  }, function(response) {
+    if (chrome.runtime.lastError) {
+      console.error('[ContentScript] Error sending PAGE_LOADED:', chrome.runtime.lastError);
+    } else {
+      console.log('[ContentScript] ✅ Page loaded event sent');
     }
+  });
+  
+  // Set up event listeners
+  setupEventListeners();
+}
+
+// ─────────────────────────────────────────────────
+// Event Listener Setup
+// ─────────────────────────────────────────────────
+
+function setupEventListeners() {
+  CONFIG.TRACKED_EVENTS.forEach(eventType => {
+    document.addEventListener(eventType, handleEvent, true);
+  });
+  
+  console.log('[ContentScript] Event listeners attached:', CONFIG.TRACKED_EVENTS.join(', '));
+}
+
+// ─────────────────────────────────────────────────
+// Event Handler
+// ─────────────────────────────────────────────────
+
+function handleEvent(event) {
+  // Debounce
+  const now = Date.now();
+  if (now - lastEventTime < CONFIG.DEBOUNCE_TIME) {
+    return;
   }
-
-  /**
-   * Безопасное получение CSS-селектора элемента
-   */
-  function getSelector(element) {
-    try {
-      if (!element || !element.tagName) return 'unknown';
-      
-      // Если есть ID, использовать его
-      if (element.id && element.id.trim()) {
-        return `#${element.id}`;
-      }
-      
-      // Построить path по иерархии DOM
-      const path = [];
-      let current = element;
-      
-      while (current && current.parentElement) {
-        let selector = current.tagName.toLowerCase();
-        
-        // Добавить класс если есть
-        if (current.className && typeof current.className === 'string') {
-          const classes = current.className.trim().split(/\s+/).slice(0, 2).join('.');
-          if (classes) {
-            selector += '.' + classes;
-          }
-        }
-        
-        path.unshift(selector);
-        current = current.parentElement;
-      }
-      
-      // Вернуть первые 3 селектора
-      return path.slice(0, 3).join(' > ');
-    } catch (error) {
-      console.warn('[ContentScript] getSelector error:', error.message);
-      return 'unknown';
-    }
-  }
-
-  /**
-   * Безопасная проверка, является ли элемент интерактивным
-   */
-  function isInteractiveElement(element) {
-    try {
-      if (!element) return false;
-      if (typeof element.matches !== 'function') return false;
-      
-      const interactiveSelectors = [
-        'a',
-        'button',
-        'input',
-        '[role="button"]',
-        '[role="link"]',
-        '[role="menuitem"]',
-        'select',
-        'textarea'
-      ];
-      
-      return interactiveSelectors.some(selector => {
-        try {
-          return element.matches(selector);
-        } catch (e) {
-          return false;
-        }
-      });
-    } catch (error) {
-      console.warn('[ContentScript] isInteractiveElement error:', error.message);
-      return false;
-    }
-  }
-
-  /**
-   * Отслеживать клики с безопасностью
-   */
-  function initClickTracking() {
-    try {
-      document.addEventListener('click', (e) => {
-        try {
-          const target = e.target;
-          const event = {
-            type: 'click',
-            timestamp: Date.now(),
-            selector: getSelector(target),
-            target: target.id || target.className || target.tagName,
-            text: target.textContent?.substring(0, 50) || '',
-            x: e.clientX,
-            y: e.clientY,
-            tagName: target.tagName
-          };
-
-          sendMessage('RECORD_EVENT', event);
-        } catch (error) {
-          console.warn('[ContentScript] Ошибка обработки клика:', error.message);
-        }
-      }, { passive: true });
-    } catch (error) {
-      console.warn('[ContentScript] initClickTracking error:', error.message);
-    }
-  }
-
-  /**
-   * Отслеживать навигацию в SPA приложениях
-   */
-  function initNavigationTracking() {
-    try {
-      const originalPushState = window.history.pushState;
-      const originalReplaceState = window.history.replaceState;
-
-      window.history.pushState = function(...args) {
-        try {
-          originalPushState.apply(this, args);
-          const event = {
-            type: 'navigation',
-            timestamp: Date.now(),
-            url: window.location.href,
-            title: document.title
-          };
-          sendMessage('RECORD_EVENT', event);
-        } catch (error) {
-          console.warn('[ContentScript] pushState error:', error.message);
-        }
-      };
-
-      window.history.replaceState = function(...args) {
-        try {
-          originalReplaceState.apply(this, args);
-          const event = {
-            type: 'navigation',
-            timestamp: Date.now(),
-            url: window.location.href,
-            title: document.title
-          };
-          sendMessage('RECORD_EVENT', event);
-        } catch (error) {
-          console.warn('[ContentScript] replaceState error:', error.message);
-        }
-      };
-    } catch (error) {
-      console.warn('[ContentScript] initNavigationTracking error:', error.message);
-    }
-  }
-
-  /**
-   * Отслеживать скролл события
-   */
-  function initScrollTracking() {
-    try {
-      let scrollTimeout;
-      window.addEventListener('scroll', () => {
-        try {
-          clearTimeout(scrollTimeout);
-          scrollTimeout = setTimeout(() => {
-            const event = {
-              type: 'scroll',
-              timestamp: Date.now(),
-              x: window.scrollX,
-              y: window.scrollY
-            };
-            sendMessage('RECORD_EVENT', event);
-          }, 250);
-        } catch (error) {
-          console.warn('[ContentScript] Ошибка обработки скролла:', error.message);
-        }
-      }, { passive: true });
-    } catch (error) {
-      console.warn('[ContentScript] initScrollTracking error:', error.message);
-    }
-  }
-
-  /**
-   * Отслеживать hover события на интерактивных элементах
-   * С полифиллом для Element.matches()
-   */
-  function initHoverTracking() {
-    try {
-      document.addEventListener('mouseenter', (e) => {
-        try {
-          // Использовать безопасную проверку
-          if (isInteractiveElement(e.target)) {
-            const event = {
-              type: 'hover',
-              timestamp: Date.now(),
-              selector: getSelector(e.target),
-              tagName: e.target.tagName
-            };
-            sendMessage('RECORD_EVENT', event);
-          }
-        } catch (error) {
-          console.warn('[ContentScript] Ошибка hover:', error.message);
-        }
-      }, { passive: true, capture: true });
-    } catch (error) {
-      console.warn('[ContentScript] initHoverTracking error:', error.message);
-    }
-  }
-
-  // Начать трекинг
+  lastEventTime = now;
+  
   try {
-    initClickTracking();
-    initNavigationTracking();
-    initScrollTracking();
-    initHoverTracking();
-
-    // Отправить сигнал загрузки страницы
-    sendMessage('PAGE_LOADED', {
-      url: window.location.href,
-      title: document.title,
-      timestamp: Date.now()
+    const eventData = extractEventData(event);
+    
+    // Debug logging
+    if (CONFIG.DEBUG && event.type !== 'mousemove') {
+      console.log(`[ContentScript] Event: ${event.type} on ${eventData.element}`);
+    }
+    
+    // Send to background
+    chrome.runtime.sendMessage({
+      type: 'USER_EVENT',
+      eventType: event.type,
+      element: eventData.element,
+      target: eventData.target,
+      x: event.clientX || 0,
+      y: event.clientY || 0,
+      timestamp: now,
+    }, function(response) {
+      if (chrome.runtime.lastError) {
+        console.error('[ContentScript] Send error:', chrome.runtime.lastError);
+      }
     });
-
-    console.log('[ContentScript] ✅ Трекинг инициализирован');
+    
   } catch (error) {
-    console.error('[ContentScript] Критическая ошибка инициализации:', error);
+    console.error('[ContentScript] Error handling event:', error);
   }
 }
+
+// ─────────────────────────────────────────────────
+// Event Data Extraction
+// ─────────────────────────────────────────────────
+
+function extractEventData(event) {
+  const target = event.target;
+  
+  let element = 'unknown';
+  let tagName = '';
+  let classes = '';
+  let id = '';
+  
+  if (target && target.tagName) {
+    tagName = target.tagName.toLowerCase();
+    classes = target.className ? target.className.split(' ')[0] : '';
+    id = target.id || '';
+    
+    // Build element description
+    if (id) {
+      element = `${tagName}#${id}`;
+    } else if (classes) {
+      element = `${tagName}.${classes}`;
+    } else {
+      element = tagName;
+    }
+  }
+  
+  return {
+    element: element,
+    target: {
+      tagName: tagName,
+      className: classes,
+      id: id,
+      text: target?.textContent?.substring(0, 50) || '',
+    }
+  };
+}
+
+// ─────────────────────────────────────────────────
+// Message Handlers
+// ─────────────────────────────────────────────────
+
+chrome.runtime.onMessage.addListener(function(message, sender, sendResponse) {
+  console.log('[ContentScript] Message received:', message.type);
+  
+  switch(message.type) {
+    case 'GET_PAGE_INFO':
+      sendResponse({
+        success: true,
+        url: window.location.href,
+        title: document.title,
+      });
+      break;
+    
+    case 'GET_ELEMENTS':
+      sendResponse({
+        success: true,
+        elementCount: document.querySelectorAll('*').length,
+      });
+      break;
+    
+    default:
+      sendResponse({ success: false, error: 'Unknown message' });
+  }
+});
+
+// ─────────────────────────────────────────────────
+// Startup
+// ─────────────────────────────────────────────────
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initialize);
+} else {
+  initialize();
+}
+
+// Reinitialize on dynamic page changes
+window.addEventListener('load', function() {
+  if (!isInitialized) {
+    initialize();
+  }
+});
+
+console.log('[ContentScript] ✅ Ready to track events');
