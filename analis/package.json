@@ -1,0 +1,40 @@
+{
+  "name": "behavior-graph-analyzer",
+  "version": "1.0.0",
+  "description": "Анализатор графов поведения пользователей с реально-временным анализом в Chrome",
+  "author": "vozzhaevsn",
+  "license": "MIT",
+  "main": "manifest.json",
+  "scripts": {
+    "test": "jest",
+    "build": "echo 'No build step required for extension'",
+    "dev": "echo 'Load unpacked extension in chrome://extensions'"
+  },
+  "keywords": [
+    "chrome-extension",
+    "graph-theory",
+    "user-behavior",
+    "bot-detection",
+    "web-analytics",
+    "cytoscape",
+    "machine-learning"
+  ],
+  "devDependencies": {
+    "jest": "^29.0.0"
+  },
+  "dependencies": {
+    "cytoscape": "^3.29.2"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/vozzhaevsn/JS_ITMO.git",
+    "directory": "analis"
+  },
+  "bugs": {
+    "url": "https://github.com/vozzhaevsn/JS_ITMO/issues"
+  },
+  "homepage": "https://github.com/vozzhaevsn/JS_ITMO/tree/main/analis",
+  "engines": {
+    "chrome": ">=88"
+  }
+}
