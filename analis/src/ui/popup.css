@@ -5,55 +5,59 @@
 }
 
 html, body {
-  width: 100%;
-  height: 100%;
+  width: 400px;
+  height: 600px;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  font-size: 13px;
+  font-size: 12px;
   background: #f5f5f5;
   color: #333;
+  overflow: hidden;
 }
 
 .container {
   display: flex;
   flex-direction: column;
-  width: 1200px;
-  height: 800px;
+  width: 100%;
+  height: 100%;
   background: white;
-  border-radius: 8px;
-  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
 }
 
-/* Навбар */
-.navbar {
+/* Наголовок с кнопками */
+.header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 16px;
+  padding: 10px 12px;
   background: linear-gradient(135deg, #0891b2, #06b6d4);
   color: white;
-  border-radius: 8px 8px 0 0;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  border-bottom: 1px solid #e0e0e0;
+  flex-shrink: 0;
 }
 
-.navbar h1 {
-  font-size: 18px;
+.header h1 {
+  font-size: 14px;
   font-weight: 600;
+  margin: 0;
 }
 
-.controls {
+.btn-group {
   display: flex;
-  gap: 8px;
+  gap: 6px;
 }
 
-/* Кнопки */
+/* Компактные кнопки */
 .btn {
-  padding: 8px 16px;
   border: none;
   border-radius: 4px;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.btn-small {
+  padding: 6px 10px;
 }
 
 .btn-primary {
@@ -76,190 +80,126 @@ html, body {
   background: rgba(255, 255, 255, 0.3);
 }
 
-/* Основное содержимое */
-.main-content {
+/* Компактная инфо строка */
+.info-bar {
   display: flex;
-  flex: 1;
-  gap: 12px;
-  padding: 12px;
-  overflow: hidden;
-}
-
-/* График */
-.graph-container {
-  flex: 1;
-  background: white;
-  border: 1px solid #e0e0e0;
-  border-radius: 6px;
-  overflow: hidden;
-}
-
-/* Сайдбар */
-.sidebar {
-  width: 280px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  overflow-y: auto;
-}
-
-.panel {
-  background: white;
-  border: 1px solid #e0e0e0;
-  border-radius: 6px;
-  padding: 12px;
-}
-
-.panel h3 {
-  font-size: 13px;
-  font-weight: 600;
-  margin-bottom: 8px;
-  color: #0891b2;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-
-.info-group {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 6px 0;
-  border-bottom: 1px solid #f0f0f0;
-  font-size: 12px;
-}
-
-.info-group:last-child {
-  border-bottom: none;
-}
-
-.info-group label {
-  font-weight: 500;
-  color: #666;
-}
-
-.info-group span {
-  font-weight: 600;
-  color: #0891b2;
-}
-
-/* Классификация */
-.classification {
-  display: flex;
-  flex-direction: column;
+  justify-content: space-around;
   gap: 8px;
+  padding: 8px 12px;
+  background: #f9f9f9;
+  border-bottom: 1px solid #e0e0e0;
+  font-size: 11px;
+  flex-shrink: 0;
 }
 
-.class-badge {
-  padding: 12px;
-  border-radius: 4px;
+.info-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.info-item strong {
+  color: #666;
+  font-weight: 500;
+}
+
+.info-item span {
+  color: #0891b2;
   font-weight: 600;
+}
+
+/* График - основной элемент */
+.graph {
+  flex: 1;
+  width: 100%;
+  background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+  border: none;
+  display: block;
+  margin: 0;
+  padding: 0;
+}
+
+/* Метрики в одну строку */
+.metrics-bar {
+  display: flex;
+  justify-content: space-around;
+  gap: 8px;
+  padding: 8px 12px;
+  background: #f9f9f9;
+  border-top: 1px solid #e0e0e0;
+  font-size: 10px;
+  flex-shrink: 0;
+}
+
+.metric {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+}
+
+.metric .label {
+  color: #666;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100px;
+}
+
+.metric .value {
+  color: #0891b2;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* Статус строка */
+.status {
+  padding: 6px 12px;
+  background: #f5f5f5;
+  border-top: 1px solid #e0e0e0;
+  font-size: 11px;
+  color: #666;
   text-align: center;
-  font-size: 14px;
+  flex-shrink: 0;
+}
+
+#status {
+  color: #0891b2;
+  font-weight: 500;
+}
+
+/* Мобильная отзывчивость */
+@media (max-width: 400px) {
+  html, body {
+    width: 100%;
+    height: 100vh;
+  }
+  
+  .header h1 {
+    font-size: 12px;
+  }
+  
+  .info-bar {
+    padding: 6px 8px;
+  }
+  
+  .metrics-bar {
+    padding: 6px 8px;
+  }
+}
+
+/* Основные цвета и эффекты */
+::selection {
+  background: #0891b2;
   color: white;
 }
 
-.class-badge.human {
-  background: #22c55e;
-}
-
-.class-badge.bot {
-  background: #ef4444;
-}
-
-.class-badge.unknown {
-  background: #6b7280;
-}
-
-.confidence-meter {
-  width: 100%;
-  height: 6px;
-  background: #e0e0e0;
-  border-radius: 3px;
-  overflow: hidden;
-}
-
-.confidence-bar {
-  height: 100%;
-  background: #0891b2;
-  width: 0%;
-  transition: width 0.3s ease;
-}
-
-#confidenceText {
-  font-size: 12px;
-  color: #666;
-  text-align: center;
-}
-
-/* Метрики */
-.metrics-list {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  font-size: 12px;
-}
-
-.metric-item {
-  display: flex;
-  justify-content: space-between;
-  padding: 4px 0;
-  border-bottom: 1px solid #f0f0f0;
-}
-
-/* События */
-.events-panel {
-  height: 150px;
-  border-top: 1px solid #e0e0e0;
-  padding: 12px;
-  background: white;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-}
-
-.events-panel h3 {
-  font-size: 12px;
-  font-weight: 600;
-  margin-bottom: 8px;
-  color: #0891b2;
-}
-
-.events-list {
-  flex: 1;
-  overflow-y: auto;
-  font-size: 11px;
-  font-family: monospace;
-  background: #f9f9f9;
-  padding: 8px;
-  border-radius: 4px;
-  color: #666;
-}
-
-.event-item {
-  padding: 2px 0;
-  color: #666;
-}
-
-.event-item.click { color: #0891b2; }
-.event-item.navigation { color: #22c55e; }
-.event-item.scroll { color: #f97316; }
-
-/* Статус-бар */
-.status-bar {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 8px 16px;
-  background: #f5f5f5;
-  border-top: 1px solid #e0e0e0;
-  border-radius: 0 0 8px 8px;
-  font-size: 11px;
-  color: #999;
-}
-
-/* Scrollbar */
+/* Скроллбар (если нужен) */
 ::-webkit-scrollbar {
-  width: 6px;
+  width: 4px;
 }
 
 ::-webkit-scrollbar-track {
@@ -268,7 +208,7 @@ html, body {
 
 ::-webkit-scrollbar-thumb {
   background: #ccc;
-  border-radius: 3px;
+  border-radius: 2px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
