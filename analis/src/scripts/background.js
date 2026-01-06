@@ -11,6 +11,49 @@ console.log('[BackgroundScript] Service Worker loaded');
 let currentSession = null;
 let sessionEvents = [];
 let eventStats = {};
+let eventCounter = 0;
+
+// ============ LEVEL 2: EVENT FILTERS ============
+const EVENT_FILTERS = {
+  IGNORE_EVENTS: [
+    'mouseenter',  // Filter out mouse enter/leave pairs
+    'mouseleave',  // They create noise with minimal value
+    'mouseover',
+    'mouseout'
+  ],
+  
+  COLLAPSE_EVENTS: {
+    'click': 'click',          // Important events
+    'change': 'change',
+    'focus': 'focus',
+    'blur': 'blur',
+    'input': 'input',
+    'scroll': 'scroll',
+    'submit': 'submit',
+    'keydown': 'keydown'
+  }
+};
+
+// Filter function to reduce noise
+function shouldFilterEvent(event) {
+  // Ignore noise events
+  if (EVENT_FILTERS.IGNORE_EVENTS.includes(event.type)) {
+    return true;
+  }
+  
+  // Filter duplicate events < 50ms apart on same element
+  if (sessionEvents.length > 0) {
+    const lastEvent = sessionEvents[sessionEvents.length - 1];
+    const timeDiff = event.timestamp - lastEvent.timestamp;
+    
+    if (timeDiff < 50 && lastEvent.element === event.element && lastEvent.type === event.type) {
+      console.log('[BackgroundScript] 🔇 Filtered duplicate:', event.type, 'at', event.element);
+      return true;
+    }
+  }
+  
+  return false;
+}
 
 // ─────────────────────────────────────────────
 // Session Initialization
@@ -25,13 +68,18 @@ function initializeSession() {
   };
   sessionEvents = [];
   eventStats = {};
+  eventCounter = 0;
   
-  // Save to storage
-  chrome.storage.local.set({
-    'session': currentSession,
-    'sessionEvents': sessionEvents,
-    'eventStats': eventStats,
-  }, function() {
+  // Level 3: Save to persistent storage
+  const sessionKey = 'session_' + currentSession.id;
+  const sessionData = {
+    session: currentSession,
+    events: sessionEvents,
+    stats: eventStats,
+    savedAt: Date.now()
+  };
+  
+  chrome.storage.local.set({ [sessionKey]: sessionData }, function() {
     console.log('[BackgroundScript] ✅ Session initialized:', currentSession.id);
   });
   
@@ -43,12 +91,38 @@ if (!currentSession) {
   initializeSession();
 }
 
+// Level 3: Auto-cleanup old sessions (every 24 hours)
+function cleanupOldSessions() {
+  const RETENTION_DAYS = 7;
+  const cutoffTime = Date.now() - (RETENTION_DAYS * 24 * 60 * 60 * 1000);
+  
+  chrome.storage.local.get(null, function(items) {
+    let removed = 0;
+    Object.keys(items).forEach(key => {
+      if (key.startsWith('session_')) {
+        const savedAt = items[key].savedAt || 0;
+        if (savedAt < cutoffTime) {
+          chrome.storage.local.remove(key);
+          removed++;
+          console.log('[BackgroundScript] 🗑️ Removed old session:', key);
+        }
+      }
+    });
+    if (removed > 0) {
+      console.log('[BackgroundScript] 🧹 Cleanup: removed', removed, 'old sessions');
+    }
+  });
+}
+
+// Run cleanup every 24 hours
+setInterval(cleanupOldSessions, 24 * 60 * 60 * 1000);
+
 // ─────────────────────────────────────────────
 // Message Handler
 // ─────────────────────────────────────────────
 
 chrome.runtime.onMessage.addListener(function(message, sender, sendResponse) {
-  console.log('[BackgroundScript] Message received:', message.type);
+  console.log('[BackgroundScript] 📬 Message received:', message.type);
   
   try {
     switch(message.type) {
@@ -59,8 +133,9 @@ chrome.runtime.onMessage.addListener(function(message, sender, sendResponse) {
         sendResponse({ success: true });
         break;
       
-      // ─── USER_EVENT ───
+      // ─── USER_EVENT / TRACK_EVENT ───
       case 'USER_EVENT':
+      case 'TRACK_EVENT':
         handleUserEvent(message, sender);
         sendResponse({ success: true });
         break;
@@ -70,13 +145,11 @@ chrome.runtime.onMessage.addListener(function(message, sender, sendResponse) {
       case 'GET_CURRENT_SESSION':
         handleGetSession(sendResponse);
         return true; // async response
-        break;
       
       // ─── EXPORT_DATA ───
       case 'EXPORT_DATA':
         handleExportData(sendResponse);
         return true;
-        break;
       
       // ─── CLEAR_SESSION ───
       case 'CLEAR_SESSION':
@@ -84,12 +157,17 @@ chrome.runtime.onMessage.addListener(function(message, sender, sendResponse) {
         sendResponse({ success: true });
         break;
       
+      // ─── GET_STORED_SESSIONS ───
+      case 'GET_STORED_SESSIONS':
+        handleGetStoredSessions(sendResponse);
+        return true;
+      
       default:
-        console.log('[BackgroundScript] Unknown message type:', message.type);
+        console.log('[BackgroundScript] ⚠️ Unknown message type:', message.type);
         sendResponse({ success: false, error: 'Unknown message type' });
     }
   } catch (error) {
-    console.error('[BackgroundScript] Error handling message:', error);
+    console.error('[BackgroundScript] ❌ Error handling message:', error);
     sendResponse({ success: false, error: error.message });
   }
 });
@@ -106,7 +184,7 @@ function handlePageLoaded(message, sender) {
   currentSession.url = message.url || sender.url;
   currentSession.tabId = sender.tab.id;
   
-  console.log('[BackgroundScript] Page loaded:', currentSession.url);
+  console.log('[BackgroundScript] 📄 Page loaded:', currentSession.url);
   
   // Save to storage
   chrome.storage.local.set({ 'session': currentSession });
@@ -132,6 +210,11 @@ function handleUserEvent(message, sender) {
     url: currentSession.url,
   };
   
+  // Level 2: Apply filters
+  if (shouldFilterEvent(event)) {
+    return; // Don't add filtered events
+  }
+  
   // Add to events array
   sessionEvents.push(event);
   
@@ -141,26 +224,32 @@ function handleUserEvent(message, sender) {
   }
   eventStats[event.type]++;
   
+  eventCounter++;
   const totalEvents = sessionEvents.length;
-  console.log(`[BackgroundScript] Event: ${event.type} - Total: ${totalEvents}`);
+  console.log(`[BackgroundScript] ✓ Event: ${event.type} - Total: ${totalEvents}`);
   
-  // Save every 10 events
-  if (totalEvents % 10 === 0) {
-    chrome.storage.local.set({
-      'sessionEvents': sessionEvents,
-      'eventStats': eventStats,
-    }, function() {
-      console.log('[BackgroundScript] 💾 Saved', totalEvents, 'events to storage');
+  // Level 3: Save every 30 events to persistent storage
+  if (eventCounter % 30 === 0) {
+    const sessionKey = 'session_' + currentSession.id;
+    const sessionData = {
+      session: currentSession,
+      events: sessionEvents,
+      stats: eventStats,
+      savedAt: Date.now()
+    };
+    
+    chrome.storage.local.set({ [sessionKey]: sessionData }, function() {
+      console.log('[BackgroundScript] 💾 Auto-saved', totalEvents, 'events to persistent storage');
     });
   }
 }
 
 // ─────────────────────────────────────────────
-// Get Session Handler
+// Get Session Handler (Level 1: Fixed)
 // ─────────────────────────────────────────────
 
 function handleGetSession(sendResponse) {
-  console.log('[BackgroundScript] ✅ GET_SESSION request');
+  console.log('[BackgroundScript] ✅ GET_SESSION request, events:', sessionEvents.length);
   
   // Try to get from storage first
   chrome.storage.local.get(['session', 'sessionEvents', 'eventStats'], function(result) {
@@ -175,17 +264,38 @@ function handleGetSession(sendResponse) {
         url: session.url,
         startTime: session.startTime,
         eventCount: events.length,
-        events: events.slice(-100), // Last 100 events
+        events: events.slice(-200), // Last 200 events
         stats: stats,
       }
     };
     
-    console.log('[BackgroundScript] Sending response:', {
-      eventCount: events.length,
-      stats: stats
+    console.log('[BackgroundScript] 📤 Sending response with', events.length, 'events');
+    sendResponse(response);
+  });
+}
+
+// ─────────────────────────────────────────────
+// Get Stored Sessions Handler (Level 3: New)
+// ─────────────────────────────────────────────
+
+function handleGetStoredSessions(sendResponse) {
+  chrome.storage.local.get(null, function(items) {
+    const sessions = {};
+    let count = 0;
+    
+    Object.keys(items).forEach(key => {
+      if (key.startsWith('session_')) {
+        sessions[key] = items[key];
+        count++;
+      }
     });
     
-    sendResponse(response);
+    console.log('[BackgroundScript] 📚 Found', count, 'stored sessions');
+    sendResponse({
+      success: true,
+      sessions: sessions,
+      count: count
+    });
   });
 }
 
@@ -194,7 +304,7 @@ function handleGetSession(sendResponse) {
 // ─────────────────────────────────────────────
 
 function handleExportData(sendResponse) {
-  console.log('[BackgroundScript] Export request');
+  console.log('[BackgroundScript] 📊 Export request');
   
   chrome.storage.local.get(['session', 'sessionEvents', 'eventStats'], function(result) {
     const session = result.session || currentSession;
@@ -211,6 +321,7 @@ function handleExportData(sendResponse) {
       events: events,
       statistics: {
         totalEvents: events.length,
+        totalUnique: new Set(events.map(e => e.element)).size,
         eventTypes: stats,
       }
     };
@@ -226,22 +337,23 @@ function handleExportData(sendResponse) {
 // Tab Management
 // ─────────────────────────────────────────────
 
-// Clear session when tab closes
+// Clear current session when tab closes
 chrome.tabs.onRemoved.addListener(function(tabId) {
   if (currentSession && currentSession.tabId === tabId) {
-    console.log('[BackgroundScript] Tab closed, clearing session');
-    chrome.storage.local.remove(['session', 'sessionEvents', 'eventStats']);
+    console.log('[BackgroundScript] 🔴 Tab closed, clearing current session');
     initializeSession();
   }
 });
 
 // ─────────────────────────────────────────────
-// Storage Debug
+// Storage Debug & Initialization
 // ─────────────────────────────────────────────
 
 chrome.storage.local.get(null, function(items) {
-  console.log('[BackgroundScript] Storage available:', Object.keys(items).length, 'keys');
-  if (items.sessionEvents) {
-    console.log('[BackgroundScript] Loaded events from storage:', items.sessionEvents.length);
+  const sessionCount = Object.keys(items).filter(k => k.startsWith('session_')).length;
+  console.log('[BackgroundScript] 💾 Storage available:', sessionCount, 'saved sessions');
+  
+  if (items.sessionEvents && items.sessionEvents.length > 0) {
+    console.log('[BackgroundScript] 📥 Loaded', items.sessionEvents.length, 'events from storage');
   }
 });
