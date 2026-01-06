@@ -1,193 +1,245 @@
 /**
- * EventTracker - Content Script для сбора событий пользователя
- * Отправляет данные в Service Worker через messaging
+ * Трекинг событий пользователя
+ * Прослушивают клики, hover, scroll, navigation
  */
+
 class EventTracker {
-  constructor() {
-    this.events = [];
-    this.sessionId = this.generateSessionId();
-    this.pageLoadTime = performance.now();
-    this.lastUrl = window.location.href;
+  constructor(sessionTracker, config = {}) {
+    this.sessionTracker = sessionTracker;
+    this.config = {
+      trackClicks: true,
+      trackHover: true,
+      trackScroll: true,
+      trackNavigation: true,
+      hoverDebounceTime: 100,
+      scrollDebounceTime: 250,
+      ...config
+    };
+    this.isEnabled = false;
+    this.hoverTimeout = null;
+    this.scrollTimeout = null;
   }
 
   /**
-   * Инициализировать слушатели событий
+   * Включить трекинг
    */
-  init() {
-    console.log('[EventTracker] Инициализирован для сессии:', this.sessionId);
+  enable() {
+    if (this.isEnabled) return;
+    this.isEnabled = true;
 
-    // 1. Слушать клики
-    document.addEventListener('click', (e) => {
-      this.recordEvent('click', e.target, { 
-        clientX: e.clientX, 
-        clientY: e.clientY 
-      });
-    }, true);
+    if (this.config.trackClicks) this.enableClickTracking();
+    if (this.config.trackHover) this.enableHoverTracking();
+    if (this.config.trackScroll) this.enableScrollTracking();
+    if (this.config.trackNavigation) this.enableNavigationTracking();
 
-    // 2. Слушать наведение (hover)
-    document.addEventListener('mouseenter', (e) => {
-      if (this.isInteractiveElement(e.target)) {
-        this.recordEvent('hover', e.target);
-      }
-    }, true);
+    console.log('[EventTracker] Трекинг включен');
+  }
 
-    // 3. Слушать скролл
-    document.addEventListener('scroll', () => {
-      this.recordEvent('scroll', document.documentElement);
-    }, { passive: true });
+  /**
+   * Отключить трекинг
+   */
+  disable() {
+    if (!this.isEnabled) return;
+    this.isEnabled = false;
 
-    // 4. Слушать SPA навигацию
-    window.addEventListener('popstate', () => {
-      this.recordEvent('navigation', window.location);
-    });
+    document.removeEventListener('click', this.boundClickHandler);
+    document.removeEventListener('mouseover', this.boundHoverHandler);
+    window.removeEventListener('scroll', this.boundScrollHandler);
+    window.removeEventListener('popstate', this.boundNavigationHandler);
 
-    // 5. Перехватить fetch/XHR для SPA
-    const originalFetch = window.fetch;
-    window.fetch = async (...args) => {
-      const response = await originalFetch.apply(this, args);
-      if (response.ok) {
-        setTimeout(() => this.checkPageChange(), 500);
-      }
-      return response;
+    console.log('[EventTracker] Трекинг отключен');
+  }
+
+  /**
+   * Отслеживать клики
+   */
+  enableClickTracking() {
+    this.boundClickHandler = (e) => {
+      const target = e.target;
+      const event = {
+        type: 'click',
+        timestamp: Date.now(),
+        selector: this.getSelector(target),
+        target: this.getTargetId(target),
+        text: target.textContent?.substring(0, 50) || '',
+        coordinates: {
+          x: e.clientX,
+          y: e.clientY
+        },
+        tagName: target.tagName,
+        className: target.className
+      };
+
+      this.sessionTracker.recordEvent(event);
+    };
+
+    document.addEventListener('click', this.boundClickHandler);
+  }
+
+  /**
+   * Отслеживать наведение мышю
+   */
+  enableHoverTracking() {
+    this.boundHoverHandler = (e) => {
+      clearTimeout(this.hoverTimeout);
+      
+      this.hoverTimeout = setTimeout(() => {
+        const target = e.target;
+        if (target === document) return;
+
+        const event = {
+          type: 'hover',
+          timestamp: Date.now(),
+          selector: this.getSelector(target),
+          target: this.getTargetId(target),
+          tagName: target.tagName,
+          className: target.className
+        };
+
+        this.sessionTracker.recordEvent(event);
+      }, this.config.hoverDebounceTime);
+    };
+
+    document.addEventListener('mouseover', this.boundHoverHandler);
+  }
+
+  /**
+   * Отслеживать скролл
+   */
+  enableScrollTracking() {
+    this.boundScrollHandler = (e) => {
+      clearTimeout(this.scrollTimeout);
+      
+      this.scrollTimeout = setTimeout(() => {
+        const event = {
+          type: 'scroll',
+          timestamp: Date.now(),
+          position: {
+            x: window.scrollX,
+            y: window.scrollY
+          },
+          viewport: {
+            width: window.innerWidth,
+            height: window.innerHeight
+          },
+          scrollPercentage: {
+            x: (window.scrollX / (document.documentElement.scrollWidth - window.innerWidth)) * 100,
+            y: (window.scrollY / (document.documentElement.scrollHeight - window.innerHeight)) * 100
+          }
+        };
+
+        this.sessionTracker.recordEvent(event);
+      }, this.config.scrollDebounceTime);
+    };
+
+    window.addEventListener('scroll', this.boundScrollHandler);
+  }
+
+  /**
+   * Отслеживать навигацию (SPA)
+   */
+  enableNavigationTracking() {
+    this.boundNavigationHandler = (e) => {
+      const event = {
+        type: 'navigation',
+        timestamp: Date.now(),
+        url: window.location.href,
+        title: document.title,
+        referrer: document.referrer
+      };
+
+      this.sessionTracker.recordEvent(event);
+    };
+
+    window.addEventListener('popstate', this.boundNavigationHandler);
+
+    // Перехват pushState и replaceState
+    const originalPushState = window.history.pushState;
+    const originalReplaceState = window.history.replaceState;
+
+    window.history.pushState = (...args) => {
+      originalPushState.apply(window.history, args);
+      this.boundNavigationHandler();
+    };
+
+    window.history.replaceState = (...args) => {
+      originalReplaceState.apply(window.history, args);
+      this.boundNavigationHandler();
     };
   }
 
   /**
-   * Записать событие и отправить в background
-   */
-  recordEvent(type, target, metadata = {}) {
-    const selector = this.getSelector(target);
-    
-    const event = {
-      id: this.generateEventId(),
-      type,
-      timestamp: Date.now(),
-      pageLoad: this.pageLoadTime,
-      timeSincePageLoad: Date.now() - this.pageLoadTime,
-      target: {
-        selector,
-        tagName: target.tagName || 'document',
-        className: target.className || '',
-        id: target.id || '',
-        text: this.getSafeText(target),
-        ariaLabel: target.getAttribute?.('aria-label') || ''
-      },
-      url: window.location.href,
-      viewport: {
-        width: window.innerWidth,
-        height: window.innerHeight,
-        scrollX: window.scrollX,
-        scrollY: window.scrollY
-      },
-      metadata
-    };
-
-    this.events.push(event);
-
-    // Отправить в background script
-    chrome.runtime.sendMessage({
-      type: 'ADD_EVENT',
-      payload: event,
-      sessionId: this.sessionId
-    }).catch(err => {
-      console.debug('[EventTracker] Background недоступен:', err);
-    });
-  }
-
-  /**
-   * Получить CSS селектор для элемента
+   * Получить CSS-селектор для элемента
    */
   getSelector(element) {
-    if (!element || element === document) return 'document';
-    
+    if (!element || !element.tagName) return 'unknown';
+
     if (element.id) {
-      return `#${CSS.escape(element.id)}`;
+      return `#${element.id}`;
     }
 
     const path = [];
-    let current = element;
-
-    while (current && current !== document) {
-      let selector = current.tagName.toLowerCase();
-
-      if (current.id) {
-        selector += `#${CSS.escape(current.id)}`;
+    while (element && element.parentElement) {
+      let selector = element.tagName.toLowerCase();
+      
+      if (element.id) {
+        selector += `#${element.id}`;
         path.unshift(selector);
         break;
       }
 
-      let sibling = current.previousElementSibling;
-      let nth = 1;
-      while (sibling) {
-        if (sibling.tagName.toLowerCase() === current.tagName.toLowerCase()) {
-          nth++;
-        }
-        sibling = sibling.previousElementSibling;
-      }
-
-      if (nth > 1 || current.className) {
-        selector += nth > 1 ? `:nth-of-type(${nth})` : '';
-        if (current.className) {
-          selector += '.' + CSS.escape(current.className.split(' ')[0]);
-        }
+      if (element.className) {
+        selector += `.${element.className.split(' ').join('.')}`;
       }
 
       path.unshift(selector);
-      current = current.parentElement;
+      element = element.parentElement;
     }
 
-    return path.slice(0, 5).join(' > ');
+    return path.slice(0, 5).join(' > '); // Лимит глубины
   }
 
   /**
-   * Проверить интерактивный элемент
+   * Получить уникальный идентификатор элемента
    */
-  isInteractiveElement(el) {
-    const tags = ['A', 'BUTTON', 'INPUT', 'SELECT', 'TEXTAREA'];
-    return tags.includes(el.tagName) || el.onclick !== null;
+  getTargetId(element) {
+    if (element.id) return element.id;
+    if (element.getAttribute('data-id')) return element.getAttribute('data-id');
+    if (element.getAttribute('data-testid')) return element.getAttribute('data-testid');
+    
+    // Генерировать hash она основе селектора
+    return this.hashCode(this.getSelector(element)).toString();
   }
 
   /**
-   * Получить безопасный текст элемента
+   * Простая hash-функция
    */
-  getSafeText(element) {
-    const text = (element.textContent || '').trim();
-    return text.substring(0, 100);
-  }
-
-  /**
-   * Генерировать ID сессии
-   */
-  generateSessionId() {
-    return `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-  }
-
-  /**
-   * Генерировать ID события
-   */
-  generateEventId() {
-    return `ev_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
-  }
-
-  /**
-   * Проверить изменение страницы (для SPA)
-   */
-  checkPageChange() {
-    const currentUrl = window.location.href;
-    if (this.lastUrl !== currentUrl) {
-      this.lastUrl = currentUrl;
-      this.recordEvent('navigation', window.location);
+  hashCode(str) {
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+      const char = str.charCodeAt(i);
+      hash = ((hash << 5) - hash) + char;
+      hash = hash & hash; // Конвертировать в 32-bit integer
     }
+    return Math.abs(hash);
+  }
+
+  /**
+   * Получить текущие настройки
+   */
+  getConfig() {
+    return { ...this.config };
+  }
+
+  /**
+   * Обновить настройки
+   */
+  setConfig(newConfig) {
+    this.config = { ...this.config, ...newConfig };
   }
 }
 
-// Инициализация
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', () => {
-    const tracker = new EventTracker();
-    tracker.init();
-  });
-} else {
-  const tracker = new EventTracker();
-  tracker.init();
+// Экспорт
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = EventTracker;
 }
