@@ -6,6 +6,12 @@
 
 console.log('[ContentScript] Нагружен');
 
+// Полифилл для Element.prototype.matches() для совместимости
+if (!Element.prototype.matches) {
+  Element.prototype.matches = Element.prototype.msMatchesSelector || 
+                              Element.prototype.webkitMatchesSelector;
+}
+
 // Проверить доступность chrome API
 const hasChromeAPI = () => {
   return typeof chrome !== 'undefined' && 
@@ -23,7 +29,7 @@ if (!window.__BEHAVIOR_GRAPH_LOADED__) {
   function sendMessage(type, data) {
     // Проверить доступность API
     if (!hasChromeAPI()) {
-      console.warn('[ContentScript] chrome.runtime API не доступен');
+      console.warn('[ContentScript] chrome.runtime API недоступен');
       return;
     }
 
@@ -80,6 +86,38 @@ if (!window.__BEHAVIOR_GRAPH_LOADED__) {
     } catch (error) {
       console.warn('[ContentScript] getSelector error:', error.message);
       return 'unknown';
+    }
+  }
+
+  /**
+   * Безопасная проверка, является ли элемент интерактивным
+   */
+  function isInteractiveElement(element) {
+    try {
+      if (!element) return false;
+      if (typeof element.matches !== 'function') return false;
+      
+      const interactiveSelectors = [
+        'a',
+        'button',
+        'input',
+        '[role="button"]',
+        '[role="link"]',
+        '[role="menuitem"]',
+        'select',
+        'textarea'
+      ];
+      
+      return interactiveSelectors.some(selector => {
+        try {
+          return element.matches(selector);
+        } catch (e) {
+          return false;
+        }
+      });
+    } catch (error) {
+      console.warn('[ContentScript] isInteractiveElement error:', error.message);
+      return false;
     }
   }
 
@@ -183,14 +221,14 @@ if (!window.__BEHAVIOR_GRAPH_LOADED__) {
 
   /**
    * Отслеживать hover события на интерактивных элементах
+   * С полифиллом для Element.matches()
    */
   function initHoverTracking() {
     try {
-      const interactiveSelectors = 'a, button, input, [role="button"], [role="link"]';
-      
       document.addEventListener('mouseenter', (e) => {
         try {
-          if (e.target.matches(interactiveSelectors)) {
+          // Использовать безопасную проверку
+          if (isInteractiveElement(e.target)) {
             const event = {
               type: 'hover',
               timestamp: Date.now(),
