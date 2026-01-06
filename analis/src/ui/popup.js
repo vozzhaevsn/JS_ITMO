@@ -1,571 +1,493 @@
-/**
- * Popup Script - Компактный UI для анализа графов (400x600px)
- */
+// ================================================
+// BEHAVIOR GRAPH ANALYZER - POPUP SCRIPT
+// ================================================
 
-let canvas = null;
-let ctx = null;
-let currentSession = null;
-let graphData = { nodes: [], edges: [] };
-let nodePositions = new Map();
+console.log('[Popup] Popup script loaded');
 
-// 🎯 Состояние визуализации
-let viewState = {
-  offsetX: 0,
-  offsetY: 0,
-  scale: 1,
-  minScale: 0.3,
-  maxScale: 3,
-  isDragging: false,
-  dragStartX: 0,
-  dragStartY: 0,
-  dragStartOffsetX: 0,
-  dragStartOffsetY: 0
+// ─────────────────────────────────────────────────
+// DOM Elements
+// ─────────────────────────────────────────────────
+
+const elements = {
+  // Buttons
+  analyzeBtn: document.getElementById('analyzeBtn'),
+  clearBtn: document.getElementById('clearBtn'),
+  exportJsonBtn: document.getElementById('exportJsonBtn'),
+  exportCsvBtn: document.getElementById('exportCsvBtn'),
+  exportPngBtn: document.getElementById('exportPngBtn'),
+
+  // Info elements
+  sessionId: document.getElementById('sessionId'),
+  pageUrl: document.getElementById('pageUrl'),
+  eventCount: document.getElementById('eventCount'),
+  sessionTime: document.getElementById('sessionTime'),
+
+  // Cards
+  metricsCard: document.getElementById('metricsCard'),
+  graphCard: document.getElementById('graphCard'),
+  statsCard: document.getElementById('statsCard'),
+  exportActions: document.getElementById('exportActions'),
+
+  // Metrics
+  nodeCount: document.getElementById('nodeCount'),
+  edgeCount: document.getElementById('edgeCount'),
+  avgDegree: document.getElementById('avgDegree'),
+  graphDensity: document.getElementById('graphDensity'),
+
+  // Canvas
+  graphCanvas: document.getElementById('graphCanvas'),
+  canvasInfo: document.getElementById('canvasInfo'),
+  eventStats: document.getElementById('eventStats'),
+
+  // Status
+  loading: document.getElementById('loading'),
+  error: document.getElementById('error'),
+  success: document.getElementById('success'),
 };
 
-/**
- * Инициализировать Canvas
- */
-function initCanvas() {
-  canvas = document.getElementById('graphCanvas');
-  if (!canvas) {
-    console.error('[Popup] Canvas not found!');
-    return;
-  }
+// ─────────────────────────────────────────────────
+// State
+// ─────────────────────────────────────────────────
 
-  // Поставить реальные размеры (Canvas должен иметь фиксированные размеры)
-  canvas.width = 400;
-  canvas.height = 336; // 600px - 40 (header) - 32 (info) - 36 (metrics) - 24 (status) = 468... да нет, 336 для flex: 1
+let currentSession = null;
+let currentEvents = [];
+let currentGraph = null;
+let updateTimer = null;
+
+// ─────────────────────────────────────────────────
+// Initialization
+// ─────────────────────────────────────────────────
+
+function init() {
+  console.log('[Popup] Initializing popup');
   
-  ctx = canvas.getContext('2d');
-  if (!ctx) {
-    console.error('[Popup] Cannot get canvas context!');
-    return;
-  }
+  // Load initial session data
+  loadSessionData();
   
-  // Применить девайс pixel ratio для остроты
-  const dpr = window.devicePixelRatio || 1;
-  canvas.width *= dpr;
-  canvas.height *= dpr;
-  ctx.scale(dpr, dpr);
+  // Setup event listeners
+  setupEventListeners();
   
-  // Нарисовать приветственную скрину
-  drawEmptyGraph();
+  // Auto-update session info every second
+  updateTimer = setInterval(updateSessionInfo, 1000);
   
-  // 🖱️ Обработка мыши
-  canvas.addEventListener('wheel', handleWheel, { passive: false });
-  canvas.addEventListener('mousedown', handleMouseDown);
-  canvas.addEventListener('mousemove', handleMouseMove);
-  canvas.addEventListener('mouseup', handleMouseUp);
-  canvas.addEventListener('mouseleave', handleMouseUp);
-  
-  console.log('[Popup] Canvas initialized: ' + canvas.width + 'x' + canvas.height);
+  console.log('[Popup] ✅ Popup initialized');
 }
 
-/**
- * 🎉 Обработка зума колёсиком мыши
- */
-function handleWheel(e) {
-  if (!canvas) return;
-  e.preventDefault();
-  
-  const rect = canvas.getBoundingClientRect();
-  const mouseX = e.clientX - rect.left;
-  const mouseY = e.clientY - rect.top;
-  
-  const zoomFactor = 1.1;
-  const newScale = e.deltaY > 0 
-    ? viewState.scale / zoomFactor 
-    : viewState.scale * zoomFactor;
-  
-  viewState.scale = Math.max(viewState.minScale, Math.min(viewState.maxScale, newScale));
-  drawGraph();
+// ─────────────────────────────────────────────────
+// Event Listeners
+// ─────────────────────────────────────────────────
+
+function setupEventListeners() {
+  elements.analyzeBtn.addEventListener('click', handleAnalyzeClick);
+  elements.clearBtn.addEventListener('click', handleClearClick);
+  elements.exportJsonBtn.addEventListener('click', () => exportData('json'));
+  elements.exportCsvBtn.addEventListener('click', () => exportData('csv'));
+  elements.exportPngBtn.addEventListener('click', () => exportData('png'));
 }
 
-/**
- * 🖱️ Начало перетаскивания
- */
-function handleMouseDown(e) {
-  viewState.isDragging = true;
-  viewState.dragStartX = e.clientX;
-  viewState.dragStartY = e.clientY;
-  viewState.dragStartOffsetX = viewState.offsetX;
-  viewState.dragStartOffsetY = viewState.offsetY;
-}
+// ─────────────────────────────────────────────────
+// Session Data Loading
+// ─────────────────────────────────────────────────
 
-/**
- * 🖱️ Перемещение
- */
-function handleMouseMove(e) {
-  if (!viewState.isDragging) return;
+function loadSessionData() {
+  console.log('[Popup] Loading session data from background');
   
-  const deltaX = e.clientX - viewState.dragStartX;
-  const deltaY = e.clientY - viewState.dragStartY;
-  
-  viewState.offsetX = viewState.dragStartOffsetX + deltaX;
-  viewState.offsetY = viewState.dragStartOffsetY + deltaY;
-  
-  drawGraph();
-}
-
-/**
- * 🖱️ Конец перетаскивания
- */
-function handleMouseUp(e) {
-  viewState.isDragging = false;
-}
-
-/**
- * 🎫 Нарисовать пустой граф
- */
-function drawEmptyGraph() {
-  if (!ctx || !canvas) return;
-  
-  const w = canvas.width / (window.devicePixelRatio || 1);
-  const h = canvas.height / (window.devicePixelRatio || 1);
-  
-  // Очистить
-  ctx.clearRect(0, 0, w, h);
-  
-  // Сетка
-  ctx.strokeStyle = '#e5e7eb';
-  ctx.lineWidth = 0.5;
-  
-  for (let i = 0; i < w; i += 40) {
-    ctx.beginPath();
-    ctx.moveTo(i, 0);
-    ctx.lineTo(i, h);
-    ctx.stroke();
-  }
-  
-  for (let i = 0; i < h; i += 40) {
-    ctx.beginPath();
-    ctx.moveTo(0, i);
-    ctx.lineTo(w, i);
-    ctx.stroke();
-  }
-  
-  // Сообщение
-  ctx.fillStyle = '#9ca3af';
-  ctx.font = '12px Arial';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText('🔍 Эвентов нет', w / 2, h / 2);
-}
-
-/**
- * 🎫 Нарисовать граф
- */
-function drawGraph() {
-  if (!ctx || !canvas) return;
-  
-  const w = canvas.width / (window.devicePixelRatio || 1);
-  const h = canvas.height / (window.devicePixelRatio || 1);
-  
-  // Очистить
-  ctx.clearRect(0, 0, w, h);
-  
-  // Охранить контекст
-  ctx.save();
-  ctx.translate(viewState.offsetX, viewState.offsetY);
-  ctx.scale(viewState.scale, viewState.scale);
-  
-  // Прорисовать рёбра с градиентом
-  graphData.edges.forEach(edge => {
-    const source = nodePositions.get(edge.source);
-    const target = nodePositions.get(edge.target);
-    
-    if (source && target) {
-      const gradient = ctx.createLinearGradient(source.x, source.y, target.x, target.y);
-      gradient.addColorStop(0, 'rgba(6, 182, 212, 0.8)');
-      gradient.addColorStop(1, 'rgba(59, 130, 246, 0.8)');
-      
-      ctx.strokeStyle = gradient;
-      ctx.lineWidth = 2.5;
-      ctx.lineCap = 'round';
-      ctx.beginPath();
-      ctx.moveTo(source.x, source.y);
-      ctx.lineTo(target.x, target.y);
-      ctx.stroke();
-      
-      // Стрелка
-      drawArrow(source.x, source.y, target.x, target.y);
-    }
-  });
-  
-  // Нарисовать ноды с градиентом
-  graphData.nodes.forEach((node, idx) => {
-    const pos = nodePositions.get(node.id);
-    if (pos) {
-      ctx.shadowColor = 'rgba(0, 0, 0, 0.3)';
-      ctx.shadowBlur = 8;
-      ctx.shadowOffsetX = 2;
-      ctx.shadowOffsetY = 2;
-      
-      const nodeGradient = ctx.createRadialGradient(pos.x - 5, pos.y - 5, 0, pos.x, pos.y, 12);
-      nodeGradient.addColorStop(0, '#22d3ee');
-      nodeGradient.addColorStop(0.7, '#06b6d4');
-      nodeGradient.addColorStop(1, '#0891b2');
-      
-      ctx.fillStyle = nodeGradient;
-      ctx.beginPath();
-      ctx.arc(pos.x, pos.y, 12, 0, Math.PI * 2);
-      ctx.fill();
-      
-      ctx.strokeStyle = '#ffffff';
-      ctx.lineWidth = 2;
-      ctx.stroke();
-      
-      ctx.shadowColor = 'transparent';
-      
-      ctx.fillStyle = 'white';
-      ctx.font = 'bold 10px Arial';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      const label = (node.label || node.id).substring(0, 2);
-      ctx.fillText(label, pos.x, pos.y);
-    }
-  });
-  
-  ctx.restore();
-  
-  // Масштаб
-  drawZoomInfo();
-}
-
-/**
- * 📊 Масштаб
- */
-function drawZoomInfo() {
-  ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
-  ctx.font = '10px Arial';
-  ctx.textAlign = 'left';
-  ctx.textBaseline = 'top';
-  ctx.fillText(`🔍 ${Math.round(viewState.scale * 100)}%`, 8, 8);
-}
-
-/**
- * 📊 Стрелка ребра
- */
-function drawArrow(fromX, fromY, toX, toY) {
-  if (!ctx) return;
-  
-  const headlen = 10;
-  const angle = Math.atan2(toY - fromY, toX - fromX);
-  
-  const endX = toX - 12 * Math.cos(angle);
-  const endY = toY - 12 * Math.sin(angle);
-  
-  ctx.strokeStyle = 'rgba(59, 130, 246, 0.8)';
-  ctx.fillStyle = 'rgba(59, 130, 246, 0.8)';
-  ctx.beginPath();
-  ctx.moveTo(endX - headlen * Math.cos(angle - Math.PI / 6), endY - headlen * Math.sin(angle - Math.PI / 6));
-  ctx.lineTo(endX, endY);
-  ctx.lineTo(endX - headlen * Math.cos(angle + Math.PI / 6), endY - headlen * Math.sin(angle + Math.PI / 6));
-  ctx.fill();
-}
-
-/**
- * 🎯 Открыть ноды
- */
-function layoutNodes() {
-  if (!canvas) return;
-  
-  const w = canvas.width / (window.devicePixelRatio || 1);
-  const h = canvas.height / (window.devicePixelRatio || 1);
-  const centerX = w / 2;
-  const centerY = h / 2;
-  
-  const nodeCount = graphData.nodes.length;
-  const radius = Math.min(w, h) / 2.8 * Math.sqrt(nodeCount) / Math.max(2, nodeCount);
-  
-  graphData.nodes.forEach((node, index) => {
-    const angle = (index / Math.max(nodeCount, 1)) * Math.PI * 2;
-    const radiusOffset = radius * (0.8 + 0.2 * Math.sin(index));
-    
-    const x = centerX + radiusOffset * Math.cos(angle);
-    const y = centerY + radiusOffset * Math.sin(angle);
-    
-    nodePositions.set(node.id, { x, y });
-  });
-  
-  autoFitGraph();
-  drawGraph();
-}
-
-/**
- * 📀 Автоматическое масштабирование
- */
-function autoFitGraph() {
-  if (!canvas || nodePositions.size === 0) return;
-  
-  let minX = Infinity, maxX = -Infinity;
-  let minY = Infinity, maxY = -Infinity;
-  
-  nodePositions.forEach(pos => {
-    minX = Math.min(minX, pos.x);
-    maxX = Math.max(maxX, pos.x);
-    minY = Math.min(minY, pos.y);
-    maxY = Math.max(maxY, pos.y);
-  });
-  
-  const padding = 30;
-  const graphWidth = maxX - minX + padding * 2;
-  const graphHeight = maxY - minY + padding * 2;
-  
-  const w = canvas.width / (window.devicePixelRatio || 1);
-  const h = canvas.height / (window.devicePixelRatio || 1);
-  
-  const scaleX = w / graphWidth;
-  const scaleY = h / graphHeight;
-  viewState.scale = Math.min(scaleX, scaleY, 1) * 0.9;
-  
-  const centerX = w / 2;
-  const centerY = h / 2;
-  viewState.offsetX = centerX - ((minX + maxX) / 2) * viewState.scale;
-  viewState.offsetY = centerY - ((minY + maxY) / 2) * viewState.scale;
-}
-
-/**
- * Обновить граф
- */
-function updateGraph(data) {
-  graphData = data || { nodes: [], edges: [] };
-  nodePositions.clear();
-  
-  viewState.scale = 1;
-  viewState.offsetX = 0;
-  viewState.offsetY = 0;
-  
-  if (graphData.nodes.length === 0) {
-    drawEmptyGraph();
-  } else {
-    layoutNodes();
-  }
-  
-  updateStats(graphData.nodes.length, graphData.edges.length);
-}
-
-/**
- * Обновить статистику
- */
-function updateStats(nodeCount, edgeCount) {
-  const nodeCountEl = document.getElementById('nodeCount');
-  const edgeCountEl = document.getElementById('edgeCount');
-  
-  if (nodeCountEl) nodeCountEl.textContent = nodeCount;
-  if (edgeCountEl) edgeCountEl.textContent = edgeCount;
-
-  if (currentSession) {
-    const eventCountEl = document.getElementById('eventCount');
-    if (eventCountEl) eventCountEl.textContent = currentSession.eventCount || 0;
-  }
-}
-
-/**
- * ✅ АНАЛИЗИРОВАТЬ ТЕКУЩУЮ СЕССИЮ
- */
-function analyzeCurrentSession() {
-  console.log('[Popup] Нажата кнопка анализа');
-  
-  // Читаю из chrome.storage.local
-  chrome.storage.local.get(['currentSession', 'sessionEvents'], function(result) {
-    console.log('[Popup] Из storage:', result.sessionEvents?.length || 0, 'событий');
-    
-    if (result.sessionEvents && result.sessionEvents.length > 0) {
-      const events = result.sessionEvents;
-      const session = result.currentSession || {};
-      
-      currentSession = {
-        id: session.id || 'unknown',
-        url: session.url || 'N/A',
-        startTime: session.startTime,
-        eventCount: events.length,
-        events: events,
-        duration: Date.now() - (session.startTime || 0)
-      };
-      
-      console.log('[Popup] Из storage:', currentSession.eventCount, 'событий');
-      updateSessionDisplay(currentSession);
+  chrome.runtime.sendMessage({ type: 'GET_SESSION' }, function(response) {
+    if (chrome.runtime.lastError) {
+      console.error('[Popup] Error:', chrome.runtime.lastError);
+      showError('Failed to load session data');
       return;
     }
     
-    // Если нет в storage
-    chrome.runtime.sendMessage(
-      { type: 'GET_CURRENT_SESSION' },
-      function(response) {
-        console.log('[Popup] Ответ от background:', response);
-        
-        if (!response || !response.session) {
-          console.log('[Popup] Нет данных');
-          const eventCountEl = document.getElementById('eventCount');
-          if (eventCountEl) eventCountEl.textContent = '0';
-          return;
-        }
-        
-        const session = response.session;
-        console.log('[Popup] Получено', session.eventCount, 'событий');
-        
-        currentSession = session;
-        updateSessionDisplay(currentSession);
-      }
-    );
+    if (response && response.session) {
+      currentSession = response.session;
+      currentEvents = response.session.events || [];
+      
+      console.log('[Popup] ✅ Session loaded:', {
+        events: currentEvents.length,
+        stats: response.session.stats
+      });
+      
+      updateSessionInfo();
+    } else {
+      console.log('[Popup] No session data available');
+      showError('No session data available');
+    }
   });
 }
 
-/**
- * Отобразить сессию
- */
-function updateSessionDisplay(session) {
-  if (!session) return;
+function updateSessionInfo() {
+  if (!currentSession) return;
   
-  const eventCount = session.eventCount || session.events?.length || 0;
-  const eventCountEl = document.getElementById('eventCount');
-  if (eventCountEl) eventCountEl.textContent = eventCount;
+  // Update basic info
+  const sessionIdShort = currentSession.id.substring(0, 12) + '...';
+  elements.sessionId.textContent = sessionIdShort;
+  elements.pageUrl.textContent = currentSession.url || 'No page loaded';
+  elements.eventCount.textContent = currentSession.eventCount || '0';
   
-  const nodeCountEl = document.getElementById('nodeCount');
-  const edgeCountEl = document.getElementById('edgeCount');
-  if (nodeCountEl) nodeCountEl.textContent = eventCount || 0;
-  if (edgeCountEl) edgeCountEl.textContent = Math.max(0, (eventCount || 0) - 1);
-  
-  // Нарисовать граф
-  if (session.events && session.events.length > 0) {
-    const nodes = [];
-    const edges = [];
-    const uniqueTypes = new Set();
-    
-    session.events.forEach((event, idx) => {
-      const type = event.type || 'unknown';
-      uniqueTypes.add(type);
-      
-      if (!nodes.find(n => n.id === type)) {
-        nodes.push({ id: type, label: type });
-      }
-      
-      if (idx > 0) {
-        const prevType = session.events[idx - 1].type || 'unknown';
-        if (prevType !== type) {
-          edges.push({ source: prevType, target: type });
-        }
-      }
-    });
-    
-    updateGraph({ nodes, edges });
-  } else {
-    drawEmptyGraph();
-  }
-  
-  // Обновить метрики
-  if (session.events?.length > 0) {
-    const variety = (new Set(session.events.map(e => e.type)).size / session.events.length).toFixed(2);
-    const varietyEl = document.getElementById('metricPathVariety');
-    const cyclesEl = document.getElementById('metricComplexCycles');
-    if (varietyEl) varietyEl.textContent = variety;
-    if (cyclesEl) cyclesEl.textContent = session.events.length > 5 ? 'Да' : 'Нет';
+  // Update session time
+  if (currentSession.startTime) {
+    const duration = Math.floor((Date.now() - currentSession.startTime) / 1000);
+    elements.sessionTime.textContent = formatTime(duration);
   }
 }
 
-/**
- * Экспортировать данные
- */
-function exportData() {
-  if (!currentSession) {
-    alert('Нет данных для экспорта');
+// ─────────────────────────────────────────────────
+// Analyze Handler
+// ─────────────────────────────────────────────────
+
+function handleAnalyzeClick() {
+  console.log('[Popup] Analyze button clicked');
+  
+  if (!currentEvents || currentEvents.length === 0) {
+    showError('⚠️ No events to analyze. Click some elements on the page!');
     return;
   }
+  
+  showLoading(true);
+  
+  try {
+    // Build graph from events
+    currentGraph = buildGraph(currentEvents);
+    
+    // Calculate metrics
+    const metrics = calculateMetrics(currentGraph);
+    
+    // Display results
+    displayMetrics(metrics);
+    displayGraph(currentGraph);
+    displayEventStats(currentSession.stats || {});
+    
+    // Show export actions
+    elements.exportActions.style.display = 'block';
+    
+    showSuccess('🌟 Graph generated successfully!');
+    console.log('[Popup] Analysis complete:', metrics);
+    
+  } catch (error) {
+    console.error('[Popup] Analysis error:', error);
+    showError('Error analyzing data: ' + error.message);
+  } finally {
+    showLoading(false);
+  }
+}
 
-  const jsonData = JSON.stringify(currentSession, null, 2);
-  const blob = new Blob([jsonData], { type: 'application/json' });
+// ─────────────────────────────────────────────────
+// Graph Building
+// ─────────────────────────────────────────────────
+
+function buildGraph(events) {
+  const nodes = new Map();
+  const edges = [];
+  
+  // Build node map (elements)
+  events.forEach((event, index) => {
+    if (!nodes.has(event.element)) {
+      nodes.set(event.element, {
+        id: event.element,
+        label: event.element,
+        value: 0,
+        connections: new Set(),
+      });
+    }
+    nodes.get(event.element).value++;
+  });
+  
+  // Build edges (element transitions)
+  for (let i = 0; i < events.length - 1; i++) {
+    const from = events[i].element;
+    const to = events[i + 1].element;
+    
+    if (from !== to) {
+      const edge = `${from}=>${to}`;
+      edges.push({ from, to });
+      
+      nodes.get(from).connections.add(to);
+      nodes.get(to).connections.add(from);
+    }
+  }
+  
+  return {
+    nodes: Array.from(nodes.values()),
+    edges: edges,
+    nodeCount: nodes.size,
+    edgeCount: edges.length,
+  };
+}
+
+// ─────────────────────────────────────────────────
+// Metrics
+// ─────────────────────────────────────────────────
+
+function calculateMetrics(graph) {
+  const nodeCount = graph.nodeCount;
+  const edgeCount = graph.edgeCount;
+  
+  const avgDegree = nodeCount > 0 ? (2 * edgeCount / nodeCount).toFixed(2) : 0;
+  const maxPossibleEdges = nodeCount * (nodeCount - 1) / 2;
+  const density = maxPossibleEdges > 0 ? (edgeCount / maxPossibleEdges).toFixed(3) : 0;
+  
+  return {
+    nodeCount,
+    edgeCount,
+    avgDegree,
+    density,
+  };
+}
+
+function displayMetrics(metrics) {
+  elements.metricsCard.style.display = 'block';
+  elements.nodeCount.textContent = metrics.nodeCount;
+  elements.edgeCount.textContent = metrics.edgeCount;
+  elements.avgDegree.textContent = metrics.avgDegree;
+  elements.graphDensity.textContent = metrics.density;
+}
+
+// ─────────────────────────────────────────────────
+// Graph Rendering
+// ─────────────────────────────────────────────────
+
+function displayGraph(graph) {
+  if (graph.nodeCount === 0) {
+    elements.canvasInfo.textContent = 'No nodes to display';
+    return;
+  }
+  
+  elements.graphCard.style.display = 'block';
+  elements.canvasInfo.style.display = 'none';
+  
+  const canvas = elements.graphCanvas;
+  const ctx = canvas.getContext('2d');
+  
+  // Set canvas resolution
+  canvas.width = canvas.offsetWidth * devicePixelRatio;
+  canvas.height = 300 * devicePixelRatio;
+  ctx.scale(devicePixelRatio, devicePixelRatio);
+  
+  const width = canvas.offsetWidth;
+  const height = 300;
+  const centerX = width / 2;
+  const centerY = height / 2;
+  const radius = Math.min(width, height) / 3;
+  
+  // Calculate node positions (circle layout)
+  const angleSlice = (2 * Math.PI) / graph.nodeCount;
+  graph.nodes.forEach((node, index) => {
+    node.x = centerX + radius * Math.cos(index * angleSlice);
+    node.y = centerY + radius * Math.sin(index * angleSlice);
+  });
+  
+  // Draw edges
+  ctx.strokeStyle = '#cbd5e0';
+  ctx.lineWidth = 1;
+  graph.edges.forEach(edge => {
+    const from = graph.nodes.find(n => n.id === edge.from);
+    const to = graph.nodes.find(n => n.id === edge.to);
+    if (from && to) {
+      ctx.beginPath();
+      ctx.moveTo(from.x, from.y);
+      ctx.lineTo(to.x, to.y);
+      ctx.stroke();
+    }
+  });
+  
+  // Draw nodes
+  graph.nodes.forEach((node, index) => {
+    const size = 8 + (node.value / graph.nodes.reduce((max, n) => Math.max(max, n.value), 1)) * 12;
+    
+    // Node circle
+    ctx.fillStyle = '#3182ce';
+    ctx.beginPath();
+    ctx.arc(node.x, node.y, size, 0, 2 * Math.PI);
+    ctx.fill();
+    
+    // Node label
+    ctx.fillStyle = '#2d3748';
+    ctx.font = '10px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    const label = node.label.substring(0, 3);
+    ctx.fillText(label, node.x, node.y + size + 15);
+  });
+  
+  console.log('[Popup] Graph rendered:', graph.nodeCount, 'nodes,', graph.edgeCount, 'edges');
+}
+
+// ─────────────────────────────────────────────────
+// Event Stats
+// ─────────────────────────────────────────────────
+
+function displayEventStats(stats) {
+  if (!stats || Object.keys(stats).length === 0) {
+    return;
+  }
+  
+  elements.statsCard.style.display = 'block';
+  elements.eventStats.innerHTML = '';
+  
+  Object.entries(stats).forEach(([eventType, count]) => {
+    const row = document.createElement('div');
+    row.className = 'stat-row';
+    row.innerHTML = `
+      <span class="stat-label">${eventType}</span>
+      <span class="stat-value">${count}</span>
+    `;
+    elements.eventStats.appendChild(row);
+  });
+}
+
+// ─────────────────────────────────────────────────
+// Clear Handler
+// ─────────────────────────────────────────────────
+
+function handleClearClick() {
+  console.log('[Popup] Clear button clicked');
+  
+  chrome.runtime.sendMessage({ type: 'CLEAR_SESSION' }, function(response) {
+    if (response && response.success) {
+      currentEvents = [];
+      currentSession = null;
+      currentGraph = null;
+      
+      // Hide cards
+      elements.metricsCard.style.display = 'none';
+      elements.graphCard.style.display = 'none';
+      elements.statsCard.style.display = 'none';
+      elements.exportActions.style.display = 'none';
+      
+      // Reset info
+      elements.eventCount.textContent = '0';
+      elements.sessionId.textContent = 'Session cleared';
+      
+      showSuccess('🗑️ Session cleared successfully!');
+      console.log('[Popup] Session cleared');
+    }
+  });
+}
+
+// ─────────────────────────────────────────────────
+// Export
+// ─────────────────────────────────────────────────
+
+function exportData(format) {
+  console.log('[Popup] Exporting data as', format);
+  
+  if (!currentEvents || currentEvents.length === 0) {
+    showError('No data to export');
+    return;
+  }
+  
+  try {
+    let content;
+    let filename;
+    
+    if (format === 'json') {
+      content = JSON.stringify({
+        session: currentSession,
+        events: currentEvents,
+        exportedAt: new Date().toISOString(),
+      }, null, 2);
+      filename = 'behavior-analysis.json';
+    } else if (format === 'csv') {
+      content = exportAsCSV(currentEvents);
+      filename = 'behavior-analysis.csv';
+    } else if (format === 'png') {
+      downloadCanvasAsPNG();
+      return;
+    }
+    
+    downloadFile(content, filename);
+    showSuccess(`✅ Exported as ${format.toUpperCase()}`);
+    
+  } catch (error) {
+    console.error('[Popup] Export error:', error);
+    showError('Export failed: ' + error.message);
+  }
+}
+
+function exportAsCSV(events) {
+  const headers = ['Timestamp', 'Event Type', 'Element', 'X', 'Y'];
+  const rows = events.map(event => [
+    new Date(event.timestamp).toLocaleString(),
+    event.type,
+    event.element,
+    event.x,
+    event.y,
+  ]);
+  
+  const csvContent = [
+    headers.join(','),
+    ...rows.map(row => row.map(cell => `"${cell}"`).join(','))
+  ].join('\n');
+  
+  return csvContent;
+}
+
+function downloadCanvasAsPNG() {
+  const canvas = elements.graphCanvas;
+  const link = document.createElement('a');
+  link.href = canvas.toDataURL('image/png');
+  link.download = 'behavior-graph.png';
+  link.click();
+}
+
+function downloadFile(content, filename) {
+  const blob = new Blob([content], { type: 'text/plain' });
   const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `session_${currentSession.id || Date.now()}.json`;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  link.click();
   URL.revokeObjectURL(url);
 }
 
-/**
- * Очистить данные
- */
-function clearData() {
-  if (confirm('Очистить все данные?')) {
-    currentSession = null;
-    graphData = { nodes: [], edges: [] };
-    nodePositions.clear();
-    
-    chrome.storage.local.set({
-      'currentSession': null,
-      'sessionEvents': []
-    });
-    
-    drawEmptyGraph();
-    
-    const nodeCountEl = document.getElementById('nodeCount');
-    const edgeCountEl = document.getElementById('edgeCount');
-    const eventCountEl = document.getElementById('eventCount');
-    const varietyEl = document.getElementById('metricPathVariety');
-    const cyclesEl = document.getElementById('metricComplexCycles');
-    
-    if (nodeCountEl) nodeCountEl.textContent = '0';
-    if (edgeCountEl) edgeCountEl.textContent = '0';
-    if (eventCountEl) eventCountEl.textContent = '0';
-    if (varietyEl) varietyEl.textContent = '0.00';
-    if (cyclesEl) cyclesEl.textContent = 'Нет';
-  }
+// ─────────────────────────────────────────────────
+// Message Display
+// ─────────────────────────────────────────────────
+
+function showLoading(show) {
+  elements.loading.style.display = show ? 'flex' : 'none';
 }
 
-/**
- * Автоматический анализ
- */
-let autoAnalyzeInterval = null;
-
-function startAutoAnalyze() {
-  if (autoAnalyzeInterval) return;
-  autoAnalyzeInterval = setInterval(() => {
-    analyzeCurrentSession();
-  }, 500);
+function showError(message) {
+  elements.error.textContent = message;
+  elements.error.style.display = 'block';
+  elements.success.style.display = 'none';
+  setTimeout(() => { elements.error.style.display = 'none'; }, 5000);
 }
 
-function stopAutoAnalyze() {
-  if (autoAnalyzeInterval) {
-    clearInterval(autoAnalyzeInterval);
-    autoAnalyzeInterval = null;
-  }
+function showSuccess(message) {
+  elements.success.textContent = message;
+  elements.success.style.display = 'block';
+  elements.error.style.display = 'none';
+  setTimeout(() => { elements.success.style.display = 'none'; }, 4000);
 }
 
-/**
- * Инициализация
- */
-document.addEventListener('DOMContentLoaded', () => {
-  try {
-    console.log('[Popup] Лоадинг...');
-    
-    // Отрендерить Canvas
-    initCanvas();
+// ─────────────────────────────────────────────────
+// Utilities
+// ─────────────────────────────────────────────────
 
-    // Обычные события
-    const btnAnalyze = document.getElementById('btnAnalyze');
-    const btnExport = document.getElementById('btnExport');
-    const btnClear = document.getElementById('btnClear');
-    const statusEl = document.getElementById('status');
-    
-    if (btnAnalyze) btnAnalyze.addEventListener('click', analyzeCurrentSession);
-    if (btnExport) btnExport.addEventListener('click', exportData);
-    if (btnClear) btnClear.addEventListener('click', clearData);
+function formatTime(seconds) {
+  if (seconds < 60) return seconds + 's';
+  const minutes = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  return `${minutes}m ${secs}s`;
+}
 
-    // Каждые 500мс анализируем
-    startAutoAnalyze();
-    
-    // Остановить popup
-    window.addEventListener('beforeunload', stopAutoAnalyze);
-    
-    if (statusEl) statusEl.textContent = '📊 Ок (400x600px)';
-    
-    console.log('[Popup] ✅ Компактный интерфейс 400x600px готов');
-  } catch (error) {
-    console.error('[Popup] Ошибка инициализации:', error);
-    const statusEl = document.getElementById('status');
-    if (statusEl) statusEl.textContent = '❌ Ошибка!';
-  }
+// ─────────────────────────────────────────────────
+// Cleanup on unload
+// ─────────────────────────────────────────────────
+
+window.addEventListener('unload', () => {
+  if (updateTimer) clearInterval(updateTimer);
 });
+
+// ─────────────────────────────────────────────────
+// Start
+// ─────────────────────────────────────────────────
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', init);
+} else {
+  init();
+}
