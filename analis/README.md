@@ -9,10 +9,11 @@
 ✅ **Сбор данных о поведении** - Event listeners для click, hover, scroll, navigation
 ✅ **Построение графов** - Взвешенный ориентированный граф поведения
 ✅ **Анализ алгоритмами** - BFS, Dijkstra, DFS, PageRank, CentralityMetrics
-✅ **Визуализация** - Интерактивная визуализация с Cytoscape.js
+✅ **Визуализация** - Canvas-базированная визуализация графов
 ✅ **Классификация** - Detection ботов vs людей (F1=0.94)
 ✅ **Экспорт данных** - JSON, CSV
 ✅ **Поддержка SPA** - Single Page Applications (React, Vue, Angular)
+✅ **Мульти-браузерная совместимость** - Chrome, Comet, и другие Chromium-браузеры
 
 ## Структура проекта
 
@@ -40,19 +41,74 @@ analis/
 
 ## Установка
 
+### Chrome
+
 1. Скачайте все файлы в папку `analis`
 2. Откройте `chrome://extensions/`
 3. Включите "Режим разработчика" (верхний правый угол)
-4. Нажмите "Загрузить распакованное расширение"
+4. Нажмите "Лоадить распакованное расширение"
 5. Выберите папку `analis`
+
+### Comet Browser
+
+1. Откройте `comet://extensions/`
+2. Отключите "Режим разработчика" а затем включите его
+3. Нажмите "Лоадить распакованное расширение"
+4. Выберите папку `analis`
+
+**Очень важно:** Comet блокирует внешние CDN. Мы используем Canvas-базированную визуализацию без внешних зависимостей.
 
 ## Использование
 
 1. Откройте расширение (нажмите иконку в панели инструментов)
-2. Взаимодействуйте с веб-сайтом
-3. Посмотрите граф поведения в реальном времени
-4. Анализируйте метрики: узлы, ребра, циклы
-5. Экспортируйте данные для анализа
+2. Навигайте по веб-странице
+3. Кликайте, наводите мышью, скроллите
+4. Откройте popup расширения
+5. Нажмите "Анализировать"
+6. Наблюдайте граф и метрики
+
+## Тестирование
+
+### Основной тест
+
+```
+1. Откройте DevTools (F12) → Console
+2. Навигайте по сайту (10+ кликов)
+3. Откройте попап
+4. Нажмите "Анализировать"
+```
+
+### Ожидаемые логи
+
+```
+✅ [ContentScript] Нагружен
+✅ [ContentScript] ✅ Трекинг инициализирован
+✅ [BackgroundScript] Нагружен
+✅ [BackgroundScript] Получен: PAGE_LOADED
+✅ [BackgroundScript] Получен: RECORD_EVENT
+✅ [BackgroundScript] Записано событие: click
+```
+
+## Троублшутинг
+
+### Проблема: Не загружается popup
+
+**Решение:**
+- Откройте DevTools popup: расширения → детали → Осмотреть popup.html
+- Опроверьте DevTools: есть ли ошибки
+
+### Проблема: Не собираются события
+
+**Решение:**
+- Откройте DevTools контент-скрипта: ✅ [ContentScript] должен быть в консоли
+- Откройте background script: ✅ [BackgroundScript] должен работать
+
+### Проблема: Canvas не отрысовывается
+
+**Решение:**
+- После анализа данных должен отобразиться граф
+- Это Canvas-визуализация (без Cytoscape CDN)
+- Если не работает: Проверьте console popup
 
 ## API
 
@@ -62,16 +118,16 @@ analis/
 const graph = new BehaviorGraph();
 
 // Добавить узел
-graph.addNode('home', { label: 'Home Page' });
+ graph.addNode('home', { label: 'Home Page' });
 
 // Добавить переход
-graph.addEdge('home', 'products', 1.5);
+ graph.addEdge('home', 'products', 1.5);
 
 // Вычислить все метрики
-graph.computeAllMetrics();
+ graph.computeAllMetrics();
 
 // Получить JSON
-const json = graph.toJSON();
+ const json = graph.toJSON();
 ```
 
 ### BotDetector
@@ -80,13 +136,13 @@ const json = graph.toJSON();
 const detector = new BotDetector();
 
 // Классифицировать сессию
-const features = detector.extractFeatures(session);
-const result = detector.classify(features);
-// { prediction: 'HUMAN'|'BOT', confidence: 0-1, score: 0-1, features }
+ const features = detector.extractFeatures(session);
+ const result = detector.classify(features);
+ // { prediction: 'HUMAN'|'BOT', confidence: 0-1, score: 0-1, features }
 
 // Пакетная классификация
-const stats = detector.classifyBatch(sessions);
-// { results: [], summary: { total, humans, bots, humanPercentage, avgConfidence } }
+ const stats = detector.classifyBatch(sessions);
+ // { results: [], summary: { total, humans, bots, humanPercentage, avgConfidence } }
 ```
 
 ## Научные основы
@@ -101,8 +157,20 @@ const stats = detector.classifyBatch(sessions);
 ## Технические требования
 
 - Chrome 88+
+- Comet Browser (Chromium-базированные браузеры)
 - Manifest V3
 - IndexedDB для хранения
+- JavaScript ES6+
+
+## Основные отличия Comet
+
+Отличие для совместимости с Comet браузером:
+
+✅ Никаких CDN - все ресурсы локальные
+✅ Canvas-визуализация - без внешних зависимостей
+✅ Полифиллы - для старых браузеров
+✅ Пассивные листенеры - высокая производительность
+✅ Обработка ошибок - все ошибки перехватываются
 
 ## Лицензия
 
