@@ -1,61 +1,143 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Анализатор Поведения</title>
-    <link rel="stylesheet" href="popup.css">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Behavior Graph Analyzer</title>
+  <link rel="stylesheet" href="popup.css">
 </head>
 <body>
-    <div class="container">
-        <!-- Заголовок с кнопками -->
-        <div class="header">
-            <h1>📊 Граф поведения</h1>
-            <div class="btn-group">
-                <button id="btnAnalyze" class="btn btn-small btn-primary" title="Анализировать">Анализ</button>
-                <button id="btnExport" class="btn btn-small btn-secondary" title="Экспорт">Экспорт</button>
-                <button id="btnClear" class="btn btn-small btn-secondary" title="Очистить">✕</button>
-            </div>
+  <div class="container">
+    <!-- Header -->
+    <div class="header">
+      <div class="header-content">
+        <div class="logo-section">
+          <h1 class="title">🔍 Behavior Analysis</h1>
+          <p class="subtitle">Real-time user interaction tracking</p>
         </div>
-
-        <!-- Компактная информация -->
-        <div class="info-bar">
-            <span class="info-item">
-                <strong>Узлов:</strong> <span id="nodeCount">0</span>
-            </span>
-            <span class="info-item">
-                <strong>Рёбер:</strong> <span id="edgeCount">0</span>
-            </span>
-            <span class="info-item">
-                <strong>Событий:</strong> <span id="eventCount">0</span>
-            </span>
+        <div class="status-badge" id="statusBadge">
+          <span class="status-dot"></span>
+          <span class="status-text">Ready</span>
         </div>
-
-        <!-- График (основной элемент) -->
-        <canvas id="graphCanvas" class="graph"></canvas>
-
-        <!-- Метрики в одну строку -->
-        <div class="metrics-bar">
-            <div class="metric">
-                <span class="label">Разнообразие:</span>
-                <span class="value" id="metricPathVariety">0.00</span>
-            </div>
-            <div class="metric">
-                <span class="label">Циклы:</span>
-                <span class="value" id="metricComplexCycles">Нет</span>
-            </div>
-            <div class="metric">
-                <span class="label">Вер-ть бота:</span>
-                <span class="value" id="confidenceText">-</span>
-            </div>
-        </div>
-
-        <!-- Статус -->
-        <div class="status">
-            <span id="status">Готово</span>
-        </div>
+      </div>
     </div>
 
-    <script src="popup.js"></script>
+    <!-- Session Info Card -->
+    <div class="card session-info" id="sessionInfo">
+      <div class="card-header">
+        <h2 class="card-title">📄 Session Information</h2>
+      </div>
+      <div class="card-body">
+        <div class="info-grid">
+          <div class="info-item">
+            <label>Session ID:</label>
+            <code class="session-id" id="sessionId">Loading...</code>
+          </div>
+          <div class="info-item">
+            <label>Page URL:</label>
+            <p class="url-display" id="pageUrl">No page loaded</p>
+          </div>
+          <div class="info-item">
+            <label>Events Tracked:</label>
+            <p class="metric" id="eventCount">0</p>
+          </div>
+          <div class="info-item">
+            <label>Session Time:</label>
+            <p class="metric" id="sessionTime">0s</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Metrics Card -->
+    <div class="card metrics-card" id="metricsCard" style="display: none;">
+      <div class="card-header">
+        <h2 class="card-title">📊 Graph Metrics</h2>
+      </div>
+      <div class="card-body">
+        <div class="metrics-grid">
+          <div class="metric-item">
+            <div class="metric-label">Nodes</div>
+            <div class="metric-value" id="nodeCount">0</div>
+          </div>
+          <div class="metric-item">
+            <div class="metric-label">Edges</div>
+            <div class="metric-value" id="edgeCount">0</div>
+          </div>
+          <div class="metric-item">
+            <div class="metric-label">Avg Degree</div>
+            <div class="metric-value" id="avgDegree">0</div>
+          </div>
+          <div class="metric-item">
+            <div class="metric-label">Density</div>
+            <div class="metric-value" id="graphDensity">0</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Graph Canvas -->
+    <div class="card graph-card" id="graphCard" style="display: none;">
+      <div class="card-header">
+        <h2 class="card-title">📈 Behavior Graph</h2>
+      </div>
+      <div class="card-body">
+        <canvas id="graphCanvas" class="graph-canvas"></canvas>
+        <p class="canvas-info" id="canvasInfo">Graph will appear here...</p>
+      </div>
+    </div>
+
+    <!-- Event Types Stats -->
+    <div class="card stats-card" id="statsCard" style="display: none;">
+      <div class="card-header">
+        <h2 class="card-title">📊 Event Statistics</h2>
+      </div>
+      <div class="card-body">
+        <div class="event-stats" id="eventStats">
+          <!-- Stats will be populated here -->
+        </div>
+      </div>
+    </div>
+
+    <!-- Actions -->
+    <div class="actions">
+      <button id="analyzeBtn" class="btn btn-primary">
+        <span class="btn-icon">▶️</span>
+        <span class="btn-text">Analyze Session</span>
+      </button>
+      <button id="clearBtn" class="btn btn-secondary">
+        <span class="btn-icon">🗑️</span>
+        <span class="btn-text">Clear Data</span>
+      </button>
+    </div>
+
+    <!-- Export Actions -->
+    <div class="export-actions" id="exportActions" style="display: none;">
+      <h3 class="export-title">📥 Export Data</h3>
+      <div class="export-buttons">
+        <button id="exportJsonBtn" class="btn btn-small btn-outline">
+          JSON
+        </button>
+        <button id="exportCsvBtn" class="btn btn-small btn-outline">
+          CSV
+        </button>
+        <button id="exportPngBtn" class="btn btn-small btn-outline">
+          PNG
+        </button>
+      </div>
+    </div>
+
+    <!-- Status Messages -->
+    <div class="messages">
+      <div id="loading" class="message message-loading" style="display: none;">
+        <div class="spinner"></div>
+        <span>Loading...</span>
+      </div>
+      <div id="error" class="message message-error" style="display: none;"></div>
+      <div id="success" class="message message-success" style="display: none;"></div>
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
 </body>
 </html>
