@@ -1,6 +1,6 @@
 /**
  * Popup Script - УИ для анализа графов
- * Оптимизировано для Comet: Canvas без CDN
+ * ✨ Улучшена визуализация: зум, панорамирование, градиенты
  */
 
 let canvas = null;
@@ -8,6 +8,20 @@ let ctx = null;
 let currentSession = null;
 let graphData = { nodes: [], edges: [] };
 let nodePositions = new Map();
+
+// 🎯 Состояние визуализации
+let viewState = {
+  offsetX: 0,
+  offsetY: 0,
+  scale: 1,
+  minScale: 0.3,
+  maxScale: 3,
+  isDragging: false,
+  dragStartX: 0,
+  dragStartY: 0,
+  dragStartOffsetX: 0,
+  dragStartOffsetY: 0
+};
 
 /**
  * Инициализировать Canvas для вывода графов
@@ -21,13 +35,75 @@ function initCanvas() {
   // Отрисовать приветственную скрину
   drawEmptyGraph();
   
-  // Обработка наведения для интерактивности
-  canvas.addEventListener('mousemove', handleCanvasMouseMove);
-  canvas.addEventListener('click', handleCanvasClick);
+  // 🖱️ Обработка мыши для зума и панорамирования
+  canvas.addEventListener('wheel', handleWheel, { passive: false });
+  canvas.addEventListener('mousedown', handleMouseDown);
+  canvas.addEventListener('mousemove', handleMouseMove);
+  canvas.addEventListener('mouseup', handleMouseUp);
+  canvas.addEventListener('mouseleave', handleMouseUp);
 }
 
 /**
- * Нарисовать пустой граф
+ * 🎡 Обработка зума колёсиком мыши
+ */
+function handleWheel(e) {
+  if (!canvas) return;
+  e.preventDefault();
+  
+  const rect = canvas.getBoundingClientRect();
+  const mouseX = e.clientX - rect.left;
+  const mouseY = e.clientY - rect.top;
+  
+  // Масштабирование
+  const zoomFactor = 1.1;
+  const newScale = e.deltaY > 0 
+    ? viewState.scale / zoomFactor 
+    : viewState.scale * zoomFactor;
+  
+  viewState.scale = Math.max(viewState.minScale, Math.min(viewState.maxScale, newScale));
+  
+  // Корректировка смещения для центрирования на точку мыши
+  viewState.offsetX = mouseX - (mouseX - viewState.offsetX) * (viewState.scale / (e.deltaY > 0 ? zoomFactor : 1 / zoomFactor));
+  viewState.offsetY = mouseY - (mouseY - viewState.offsetY) * (viewState.scale / (e.deltaY > 0 ? zoomFactor : 1 / zoomFactor));
+  
+  drawGraph();
+}
+
+/**
+ * 🖱️ Начало перетаскивания
+ */
+function handleMouseDown(e) {
+  viewState.isDragging = true;
+  viewState.dragStartX = e.clientX;
+  viewState.dragStartY = e.clientY;
+  viewState.dragStartOffsetX = viewState.offsetX;
+  viewState.dragStartOffsetY = viewState.offsetY;
+}
+
+/**
+ * 🖱️ Перемещение во время перетаскивания
+ */
+function handleMouseMove(e) {
+  if (!viewState.isDragging) return;
+  
+  const deltaX = e.clientX - viewState.dragStartX;
+  const deltaY = e.clientY - viewState.dragStartY;
+  
+  viewState.offsetX = viewState.dragStartOffsetX + deltaX;
+  viewState.offsetY = viewState.dragStartOffsetY + deltaY;
+  
+  drawGraph();
+}
+
+/**
+ * 🖱️ Конец перетаскивания
+ */
+function handleMouseUp(e) {
+  viewState.isDragging = false;
+}
+
+/**
+ * 🎨 Нарисовать пустой граф
  */
 function drawEmptyGraph() {
   if (!ctx || !canvas) return;
@@ -38,7 +114,7 @@ function drawEmptyGraph() {
   // Очистить canvas
   ctx.clearRect(0, 0, w, h);
   
-  // Нарисовать сетку (попеременные линии)
+  // Нарисовать сетку
   ctx.strokeStyle = '#e5e7eb';
   ctx.lineWidth = 0.5;
   
@@ -56,7 +132,7 @@ function drawEmptyGraph() {
     ctx.stroke();
   }
   
-  // Нарисовать строку "событий нет"
+  // Нарисовать сообщение
   ctx.fillStyle = '#9ca3af';
   ctx.font = '14px Arial';
   ctx.textAlign = 'center';
@@ -65,7 +141,7 @@ function drawEmptyGraph() {
 }
 
 /**
- * Нарисовать граф в Canvas
+ * 🎨 Нарисовать граф с улучшенной визуализацией
  */
 function drawGraph() {
   if (!ctx || !canvas) return;
@@ -76,14 +152,25 @@ function drawGraph() {
   // Очистить
   ctx.clearRect(0, 0, w, h);
   
-  // Рнисовать ребра
+  // Сохранить контекст для преобразований
+  ctx.save();
+  ctx.translate(viewState.offsetX, viewState.offsetY);
+  ctx.scale(viewState.scale, viewState.scale);
+  
+  // 🎨 Рисовать ребра с градиентом
   graphData.edges.forEach(edge => {
     const source = nodePositions.get(edge.source);
     const target = nodePositions.get(edge.target);
     
     if (source && target) {
-      ctx.strokeStyle = '#cbd5e1';
-      ctx.lineWidth = 2;
+      // Градиент для ребра
+      const gradient = ctx.createLinearGradient(source.x, source.y, target.x, target.y);
+      gradient.addColorStop(0, 'rgba(6, 182, 212, 0.8)');
+      gradient.addColorStop(1, 'rgba(59, 130, 246, 0.8)');
+      
+      ctx.strokeStyle = gradient;
+      ctx.lineWidth = 2.5;
+      ctx.lineCap = 'round';
       ctx.beginPath();
       ctx.moveTo(source.x, source.y);
       ctx.lineTo(target.x, target.y);
@@ -94,17 +181,36 @@ function drawGraph() {
     }
   });
   
-  // Нарисовать узлы
-  graphData.nodes.forEach(node => {
+  // 🎨 Нарисовать узлы с градиентом и тенями
+  graphData.nodes.forEach((node, idx) => {
     const pos = nodePositions.get(node.id);
     if (pos) {
-      // Круг
-      ctx.fillStyle = '#0891b2';
+      // 🌟 Тень узла
+      ctx.shadowColor = 'rgba(0, 0, 0, 0.3)';
+      ctx.shadowBlur = 8;
+      ctx.shadowOffsetX = 2;
+      ctx.shadowOffsetY = 2;
+      
+      // Градиент для узла
+      const nodeGradient = ctx.createRadialGradient(pos.x - 5, pos.y - 5, 0, pos.x, pos.y, 15);
+      nodeGradient.addColorStop(0, '#22d3ee');
+      nodeGradient.addColorStop(0.7, '#06b6d4');
+      nodeGradient.addColorStop(1, '#0891b2');
+      
+      ctx.fillStyle = nodeGradient;
       ctx.beginPath();
       ctx.arc(pos.x, pos.y, 15, 0, Math.PI * 2);
       ctx.fill();
       
-      // Лейбла
+      // Обводка узла
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      
+      // Отключить тень для текста
+      ctx.shadowColor = 'transparent';
+      
+      // Лейбл
       ctx.fillStyle = 'white';
       ctx.font = 'bold 11px Arial';
       ctx.textAlign = 'center';
@@ -113,28 +219,48 @@ function drawGraph() {
       ctx.fillText(label, pos.x, pos.y);
     }
   });
+  
+  ctx.restore();
+  
+  // 📊 Нарисовать информацию масштабирования
+  drawZoomInfo();
 }
 
 /**
- * Нарисовать стрелку ребра
+ * 📊 Нарисовать информацию о масштабировании
+ */
+function drawZoomInfo() {
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+  ctx.font = '12px Arial';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'top';
+  ctx.fillText(`🔍 ${Math.round(viewState.scale * 100)}%`, 10, 10);
+}
+
+/**
+ * 🎨 Нарисовать стрелку ребра
  */
 function drawArrow(fromX, fromY, toX, toY) {
   if (!ctx) return;
   
-  const headlen = 15;
+  const headlen = 12;
   const angle = Math.atan2(toY - fromY, toX - fromX);
   
-  ctx.strokeStyle = '#cbd5e1';
-  ctx.fillStyle = '#cbd5e1';
+  // Рассчитать точку на окончании (без пересечения с узлом)
+  const endX = toX - 15 * Math.cos(angle);
+  const endY = toY - 15 * Math.sin(angle);
+  
+  ctx.strokeStyle = 'rgba(59, 130, 246, 0.8)';
+  ctx.fillStyle = 'rgba(59, 130, 246, 0.8)';
   ctx.beginPath();
-  ctx.moveTo(toX - headlen * Math.cos(angle - Math.PI / 6), toY - headlen * Math.sin(angle - Math.PI / 6));
-  ctx.lineTo(toX, toY);
-  ctx.lineTo(toX - headlen * Math.cos(angle + Math.PI / 6), toY - headlen * Math.sin(angle + Math.PI / 6));
+  ctx.moveTo(endX - headlen * Math.cos(angle - Math.PI / 6), endY - headlen * Math.sin(angle - Math.PI / 6));
+  ctx.lineTo(endX, endY);
+  ctx.lineTo(endX - headlen * Math.cos(angle + Math.PI / 6), endY - headlen * Math.sin(angle + Math.PI / 6));
   ctx.fill();
 }
 
 /**
- * Обновить позиции узлов (simple layout)
+ * 🎯 Обновить позиции узлов с адаптивным макетом
  */
 function layoutNodes() {
   if (!canvas) return;
@@ -143,19 +269,59 @@ function layoutNodes() {
   const h = canvas.height;
   const centerX = w / 2;
   const centerY = h / 2;
-  const radius = Math.min(w, h) / 3;
   
-  // Расположить ноды по кругу
+  // Адаптивный радиус в зависимости от количества узлов
+  const nodeCount = graphData.nodes.length;
+  const radius = Math.min(w, h) / 2.5 * Math.sqrt(nodeCount) / Math.max(2, nodeCount);
+  
+  // Расположить ноды по спирали для лучшей визуализации
   graphData.nodes.forEach((node, index) => {
-    const angle = (index / Math.max(graphData.nodes.length, 1)) * Math.PI * 2;
-    const x = centerX + radius * Math.cos(angle);
-    const y = centerY + radius * Math.sin(angle);
+    const angle = (index / Math.max(nodeCount, 1)) * Math.PI * 2;
+    // Добавить небольшое смещение для более естественного вида
+    const radiusOffset = radius * (0.8 + 0.2 * Math.sin(index));
+    
+    const x = centerX + radiusOffset * Math.cos(angle);
+    const y = centerY + radiusOffset * Math.sin(angle);
     
     nodePositions.set(node.id, { x, y });
   });
   
-  // Нарисовать граф
+  // Автоматически подобрать масштаб
+  autoFitGraph();
   drawGraph();
+}
+
+/**
+ * 📐 Автоматическое масштабирование графа
+ */
+function autoFitGraph() {
+  if (!canvas || nodePositions.size === 0) return;
+  
+  // Найти границы графа
+  let minX = Infinity, maxX = -Infinity;
+  let minY = Infinity, maxY = -Infinity;
+  
+  nodePositions.forEach(pos => {
+    minX = Math.min(minX, pos.x);
+    maxX = Math.max(maxX, pos.x);
+    minY = Math.min(minY, pos.y);
+    maxY = Math.max(maxY, pos.y);
+  });
+  
+  const padding = 50;
+  const graphWidth = maxX - minX + padding * 2;
+  const graphHeight = maxY - minY + padding * 2;
+  
+  // Подобрать масштаб
+  const scaleX = canvas.width / graphWidth;
+  const scaleY = canvas.height / graphHeight;
+  viewState.scale = Math.min(scaleX, scaleY, 1) * 0.9; // 90% от максимума
+  
+  // Центрировать
+  const centerX = canvas.width / 2;
+  const centerY = canvas.height / 2;
+  viewState.offsetX = centerX - ((minX + maxX) / 2) * viewState.scale;
+  viewState.offsetY = centerY - ((minY + maxY) / 2) * viewState.scale;
 }
 
 /**
@@ -164,6 +330,11 @@ function layoutNodes() {
 function updateGraph(data) {
   graphData = data || { nodes: [], edges: [] };
   nodePositions.clear();
+  
+  // Сбросить состояние просмотра
+  viewState.scale = 1;
+  viewState.offsetX = 0;
+  viewState.offsetY = 0;
   
   if (graphData.nodes.length === 0) {
     drawEmptyGraph();
@@ -226,8 +397,7 @@ function updateClassification(analysis) {
 }
 
 /**
- * ✅ ШАГИ 2-3: АНАЛИЗИРОВАТЬ ТЕКУЩУЮ СЕССИЮ (ОБНОВЛЕННАЯ)
- * Читает из chrome.storage.local и обрабатывает асинхронные ответы
+ * ✅ АНАЛИЗИРОВАТЬ ТЕКУЩУЮ СЕССИЮ
  */
 function analyzeCurrentSession() {
   console.log('[Popup] Кнопка анализа нажата');
@@ -279,7 +449,7 @@ function analyzeCurrentSession() {
 }
 
 /**
- * ✅ ВСПОМОГАТЕЛЬНАЯ ФУНКЦИЯ: Отобразить сессию
+ * Отобразить сессию
  */
 function updateSessionDisplay(session) {
   if (!session) return;
@@ -305,7 +475,7 @@ function updateSessionDisplay(session) {
   
   // Если есть events - нарисовать граф
   if (session.events && session.events.length > 0) {
-    // Построим простой граф из событий
+    // Построим граф из событий
     const nodes = [];
     const edges = [];
     const uniqueTypes = new Set();
@@ -362,20 +532,6 @@ function updateEventsList(events) {
     div.textContent = `${event.type} → ${event.selector || 'page'}`;
     eventsList.appendChild(div);
   });
-}
-
-/**
- * Обработка движения мыши на Canvas
- */
-function handleCanvasMouseMove(e) {
-  // На основании этого можно добавить наведение и тоолтипы
-}
-
-/**
- * Обработка клика на Canvas
- */
-function handleCanvasClick(e) {
-  // На основании этого можно выбрать узлы
 }
 
 /**
@@ -436,7 +592,7 @@ function updateTime() {
 }
 
 /**
- * Каждые 500мс автоматически анализируем
+ * Автоматический анализ каждые 500мс
  */
 let autoAnalyzeInterval = null;
 
@@ -479,7 +635,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Остановить автоматик если popup закрылся
     window.addEventListener('beforeunload', stopAutoAnalyze);
     
-    console.log('[Popup] ✅ Initialized');
+    console.log('[Popup] ✅ Initialized with improved visualization');
   } catch (error) {
     console.error('Ошибка инициализации popup.js:', error);
   }
