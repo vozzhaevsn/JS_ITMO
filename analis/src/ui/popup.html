@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Анализ Графа Поведения</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.29.2/cytoscape.min.js"></script>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="container">
+    <div class="sidebar">
+      <div class="header">
+        <h2>📊 Граф Поведения</h2>
+        <p>Анализ в реальном времени</p>
+      </div>
+
+      <div class="stats">
+        <div class="stat-box">
+          <div class="stat-label">Узлы</div>
+          <div class="stat-value" id="nodeCount">0</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-label">Ребра</div>
+          <div class="stat-value" id="edgeCount">0</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-label">Сессии</div>
+          <div class="stat-value" id="sessionCount">0</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-label">Циклы</div>
+          <div class="stat-value" id="cycleCount">0</div>
+        </div>
+      </div>
+
+      <div class="controls">
+        <button id="analyzeBtn">🔍 Анализировать</button>
+        <button id="layoutBtn">🔄 Пересчитать</button>
+        <button id="exportBtn">📥 Экспорт JSON</button>
+        <button id="clearBtn">🗑️ Очистить</button>
+      </div>
+
+      <div class="classification">
+        <div class="label">Классификация:</div>
+        <span class="badge human" id="classHuman">👤 Human: 0%</span>
+        <span class="badge bot" id="classBot">🤖 Bot: 0%</span>
+      </div>
+
+      <div class="session-list">
+        <h3>📋 Сессии</h3>
+        <div id="sessionsList"></div>
+      </div>
+    </div>
+
+    <div class="graph-container">
+      <div id="cy"></div>
+      <div class="controls-overlay">
+        <button id="zoomFit">📐 По размеру</button>
+        <button id="centerView">🎯 Центр</button>
+      </div>
+    </div>
+  </div>
+
+  <input type="file" id="importFile" accept=".json" style="display: none;">
+
+  <script src="../core/BehaviorGraph.js"></script>
+  <script src="../core/BotDetector.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>
