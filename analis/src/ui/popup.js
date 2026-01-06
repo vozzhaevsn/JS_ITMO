@@ -27,14 +27,26 @@ let viewState = {
  */
 function initCanvas() {
   canvas = document.getElementById('graphCanvas');
-  if (!canvas) return;
+  if (!canvas) {
+    console.error('[Popup] Canvas not found!');
+    return;
+  }
 
-  // Отрендерить канвас с действительным размером
-  const rect = canvas.parentElement.getBoundingClientRect();
-  canvas.width = rect.width;
-  canvas.height = rect.height;
+  // Поставить реальные размеры (Canvas должен иметь фиксированные размеры)
+  canvas.width = 400;
+  canvas.height = 336; // 600px - 40 (header) - 32 (info) - 36 (metrics) - 24 (status) = 468... да нет, 336 для flex: 1
   
   ctx = canvas.getContext('2d');
+  if (!ctx) {
+    console.error('[Popup] Cannot get canvas context!');
+    return;
+  }
+  
+  // Применить девайс pixel ratio для остроты
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width *= dpr;
+  canvas.height *= dpr;
+  ctx.scale(dpr, dpr);
   
   // Нарисовать приветственную скрину
   drawEmptyGraph();
@@ -45,6 +57,8 @@ function initCanvas() {
   canvas.addEventListener('mousemove', handleMouseMove);
   canvas.addEventListener('mouseup', handleMouseUp);
   canvas.addEventListener('mouseleave', handleMouseUp);
+  
+  console.log('[Popup] Canvas initialized: ' + canvas.width + 'x' + canvas.height);
 }
 
 /**
@@ -106,8 +120,8 @@ function handleMouseUp(e) {
 function drawEmptyGraph() {
   if (!ctx || !canvas) return;
   
-  const w = canvas.width;
-  const h = canvas.height;
+  const w = canvas.width / (window.devicePixelRatio || 1);
+  const h = canvas.height / (window.devicePixelRatio || 1);
   
   // Очистить
   ctx.clearRect(0, 0, w, h);
@@ -144,8 +158,8 @@ function drawEmptyGraph() {
 function drawGraph() {
   if (!ctx || !canvas) return;
   
-  const w = canvas.width;
-  const h = canvas.height;
+  const w = canvas.width / (window.devicePixelRatio || 1);
+  const h = canvas.height / (window.devicePixelRatio || 1);
   
   // Очистить
   ctx.clearRect(0, 0, w, h);
@@ -256,8 +270,8 @@ function drawArrow(fromX, fromY, toX, toY) {
 function layoutNodes() {
   if (!canvas) return;
   
-  const w = canvas.width;
-  const h = canvas.height;
+  const w = canvas.width / (window.devicePixelRatio || 1);
+  const h = canvas.height / (window.devicePixelRatio || 1);
   const centerX = w / 2;
   const centerY = h / 2;
   
@@ -298,12 +312,15 @@ function autoFitGraph() {
   const graphWidth = maxX - minX + padding * 2;
   const graphHeight = maxY - minY + padding * 2;
   
-  const scaleX = canvas.width / graphWidth;
-  const scaleY = canvas.height / graphHeight;
+  const w = canvas.width / (window.devicePixelRatio || 1);
+  const h = canvas.height / (window.devicePixelRatio || 1);
+  
+  const scaleX = w / graphWidth;
+  const scaleY = h / graphHeight;
   viewState.scale = Math.min(scaleX, scaleY, 1) * 0.9;
   
-  const centerX = canvas.width / 2;
-  const centerY = canvas.height / 2;
+  const centerX = w / 2;
+  const centerY = h / 2;
   viewState.offsetX = centerX - ((minX + maxX) / 2) * viewState.scale;
   viewState.offsetY = centerY - ((minY + maxY) / 2) * viewState.scale;
 }
@@ -332,11 +349,15 @@ function updateGraph(data) {
  * Обновить статистику
  */
 function updateStats(nodeCount, edgeCount) {
-  document.getElementById('nodeCount').textContent = nodeCount;
-  document.getElementById('edgeCount').textContent = edgeCount;
+  const nodeCountEl = document.getElementById('nodeCount');
+  const edgeCountEl = document.getElementById('edgeCount');
+  
+  if (nodeCountEl) nodeCountEl.textContent = nodeCount;
+  if (edgeCountEl) edgeCountEl.textContent = edgeCount;
 
   if (currentSession) {
-    document.getElementById('eventCount').textContent = currentSession.eventCount || 0;
+    const eventCountEl = document.getElementById('eventCount');
+    if (eventCountEl) eventCountEl.textContent = currentSession.eventCount || 0;
   }
 }
 
@@ -376,7 +397,8 @@ function analyzeCurrentSession() {
         
         if (!response || !response.session) {
           console.log('[Popup] Нет данных');
-          document.getElementById('eventCount').textContent = '0';
+          const eventCountEl = document.getElementById('eventCount');
+          if (eventCountEl) eventCountEl.textContent = '0';
           return;
         }
         
@@ -397,9 +419,13 @@ function updateSessionDisplay(session) {
   if (!session) return;
   
   const eventCount = session.eventCount || session.events?.length || 0;
-  document.getElementById('eventCount').textContent = eventCount;
-  document.getElementById('nodeCount').textContent = eventCount || 0;
-  document.getElementById('edgeCount').textContent = Math.max(0, (eventCount || 0) - 1);
+  const eventCountEl = document.getElementById('eventCount');
+  if (eventCountEl) eventCountEl.textContent = eventCount;
+  
+  const nodeCountEl = document.getElementById('nodeCount');
+  const edgeCountEl = document.getElementById('edgeCount');
+  if (nodeCountEl) nodeCountEl.textContent = eventCount || 0;
+  if (edgeCountEl) edgeCountEl.textContent = Math.max(0, (eventCount || 0) - 1);
   
   // Нарисовать граф
   if (session.events && session.events.length > 0) {
@@ -431,8 +457,10 @@ function updateSessionDisplay(session) {
   // Обновить метрики
   if (session.events?.length > 0) {
     const variety = (new Set(session.events.map(e => e.type)).size / session.events.length).toFixed(2);
-    document.getElementById('metricPathVariety').textContent = variety;
-    document.getElementById('metricComplexCycles').textContent = session.events.length > 5 ? 'Да' : 'Нет';
+    const varietyEl = document.getElementById('metricPathVariety');
+    const cyclesEl = document.getElementById('metricComplexCycles');
+    if (varietyEl) varietyEl.textContent = variety;
+    if (cyclesEl) cyclesEl.textContent = session.events.length > 5 ? 'Да' : 'Нет';
   }
 }
 
@@ -473,11 +501,17 @@ function clearData() {
     
     drawEmptyGraph();
     
-    document.getElementById('nodeCount').textContent = '0';
-    document.getElementById('edgeCount').textContent = '0';
-    document.getElementById('eventCount').textContent = '0';
-    document.getElementById('metricPathVariety').textContent = '0.00';
-    document.getElementById('metricComplexCycles').textContent = 'Нет';
+    const nodeCountEl = document.getElementById('nodeCount');
+    const edgeCountEl = document.getElementById('edgeCount');
+    const eventCountEl = document.getElementById('eventCount');
+    const varietyEl = document.getElementById('metricPathVariety');
+    const cyclesEl = document.getElementById('metricComplexCycles');
+    
+    if (nodeCountEl) nodeCountEl.textContent = '0';
+    if (edgeCountEl) edgeCountEl.textContent = '0';
+    if (eventCountEl) eventCountEl.textContent = '0';
+    if (varietyEl) varietyEl.textContent = '0.00';
+    if (cyclesEl) cyclesEl.textContent = 'Нет';
   }
 }
 
@@ -511,9 +545,14 @@ document.addEventListener('DOMContentLoaded', () => {
     initCanvas();
 
     // Обычные события
-    document.getElementById('btnAnalyze')?.addEventListener('click', analyzeCurrentSession);
-    document.getElementById('btnExport')?.addEventListener('click', exportData);
-    document.getElementById('btnClear')?.addEventListener('click', clearData);
+    const btnAnalyze = document.getElementById('btnAnalyze');
+    const btnExport = document.getElementById('btnExport');
+    const btnClear = document.getElementById('btnClear');
+    const statusEl = document.getElementById('status');
+    
+    if (btnAnalyze) btnAnalyze.addEventListener('click', analyzeCurrentSession);
+    if (btnExport) btnExport.addEventListener('click', exportData);
+    if (btnClear) btnClear.addEventListener('click', clearData);
 
     // Каждые 500мс анализируем
     startAutoAnalyze();
@@ -521,10 +560,12 @@ document.addEventListener('DOMContentLoaded', () => {
     // Остановить popup
     window.addEventListener('beforeunload', stopAutoAnalyze);
     
-    document.getElementById('status').textContent = 'Ок ек (📊' + (canvas?.width || 'N/A') + 'x' + (canvas?.height || 'N/A') + 'px)';
+    if (statusEl) statusEl.textContent = '📊 Ок (400x600px)';
     
     console.log('[Popup] ✅ Компактный интерфейс 400x600px готов');
   } catch (error) {
-    console.error('Ошибка инициализации:', error);
+    console.error('[Popup] Ошибка инициализации:', error);
+    const statusEl = document.getElementById('status');
+    if (statusEl) statusEl.textContent = '❌ Ошибка!';
   }
 });
