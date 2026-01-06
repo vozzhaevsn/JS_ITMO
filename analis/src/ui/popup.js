@@ -226,80 +226,115 @@ function updateClassification(analysis) {
 }
 
 /**
- * ✅ АНАЛИЗИРОВАТЬ ТЕКУЩУЮ СЕССИЮ (ОБНОВЛЕННАЯ)
+ * ✅ ШАГИ 2-3: АНАЛИЗИРОВАТЬ ТЕКУЩУЮ СЕССИЮ (ОБНОВЛЕННАЯ)
+ * Читает из chrome.storage.local и обрабатывает асинхронные ответы
  */
 function analyzeCurrentSession() {
-  console.log('[Popup] Кнопка анализа');
+  console.log('[Popup] Кнопка анализа нажата');
   
-  // Отправляем GET_CURRENT_SESSION для обратной совместимости
-  chrome.runtime.sendMessage(
-    { type: 'GET_CURRENT_SESSION' },
-    function(response) {
-      console.log('[Popup] Ответ:', response);
+  // Сначала читаем из chrome.storage.local
+  chrome.storage.local.get(['currentSession', 'sessionEvents'], function(result) {
+    console.log('[Popup] Из storage получено:', result.sessionEvents?.length || 0, 'событий');
+    
+    // Если есть в storage - используем эти данные
+    if (result.sessionEvents && result.sessionEvents.length > 0) {
+      const events = result.sessionEvents;
+      const session = result.currentSession || {};
       
-      if (!response || !response.session) {
-        console.log('[Popup] Нет данных');
-        document.getElementById('eventCount').textContent = '0';
-        return;
-      }
+      currentSession = {
+        id: session.id || 'unknown',
+        url: session.url || 'N/A',
+        startTime: session.startTime,
+        eventCount: events.length,
+        events: events,
+        duration: Date.now() - (session.startTime || 0)
+      };
       
-      const session = response.session;
-      console.log('[Popup] Получено', session.eventCount, 'событий');
-      
-      // Сохраняем сессию
-      currentSession = session;
-      
-      // Отображаем метрики
-      const eventCount = session.eventCount || session.events?.length || 0;
-      document.getElementById('eventCount').textContent = eventCount;
-      
-      // Отображаем информацию сессии
-      const sessionInfo = document.getElementById('sessionInfo');
-      if (sessionInfo) {
-        sessionInfo.innerHTML = `
-          <div style="font-size: 11px; color: #666;">
-            <p><strong>Session:</strong> ${session.id?.substring(0, 16)}...</p>
-            <p><strong>URL:</strong> ${session.url || 'N/A'}</p>
-            <p><strong>Events:</strong> ${eventCount}</p>
-          </div>
-        `;
-      }
-      
-      // Основные метрики
-      document.getElementById('nodeCount').textContent = eventCount || 0;
-      document.getElementById('edgeCount').textContent = Math.max(0, (eventCount || 0) - 1);
-      
-      // Если есть events - нарисовать граф
-      if (session.events && session.events.length > 0) {
-        // Построим простой граф из событий
-        const nodes = [];
-        const edges = [];
-        const uniqueTypes = new Set();
-        
-        session.events.forEach((event, idx) => {
-          const type = event.type || 'unknown';
-          uniqueTypes.add(type);
-          
-          // Ноды - типы событий
-          if (!nodes.find(n => n.id === type)) {
-            nodes.push({ id: type, label: type });
-          }
-          
-          // Ребра - переходы
-          if (idx > 0) {
-            const prevType = session.events[idx - 1].type || 'unknown';
-            if (prevType !== type) {
-              edges.push({ source: prevType, target: type });
-            }
-          }
-        });
-        
-        updateGraph({ nodes, edges });
-      } else {
-        drawEmptyGraph();
-      }
+      console.log('[Popup] Из storage:', currentSession.eventCount, 'событий');
+      updateSessionDisplay(currentSession);
+      return;
     }
-  );
+    
+    // Если нет в storage, запрашиваем у background script
+    chrome.runtime.sendMessage(
+      { type: 'GET_CURRENT_SESSION' },
+      function(response) {
+        console.log('[Popup] Ответ от background:', response);
+        
+        if (!response || !response.session) {
+          console.log('[Popup] Нет данных сессии');
+          document.getElementById('eventCount').textContent = '0';
+          return;
+        }
+        
+        const session = response.session;
+        console.log('[Popup] Получено', session.eventCount, 'событий');
+        
+        // Сохраняем сессию
+        currentSession = session;
+        updateSessionDisplay(currentSession);
+      }
+    );
+  });
+}
+
+/**
+ * ✅ ВСПОМОГАТЕЛЬНАЯ ФУНКЦИЯ: Отобразить сессию
+ */
+function updateSessionDisplay(session) {
+  if (!session) return;
+  
+  const eventCount = session.eventCount || session.events?.length || 0;
+  document.getElementById('eventCount').textContent = eventCount;
+  
+  // Отображаем информацию сессии
+  const sessionInfo = document.getElementById('sessionInfo');
+  if (sessionInfo) {
+    sessionInfo.innerHTML = `
+      <div style="font-size: 11px; color: #666;">
+        <p><strong>Session:</strong> ${session.id?.substring(0, 16) || 'unknown'}...</p>
+        <p><strong>URL:</strong> ${session.url || 'N/A'}</p>
+        <p><strong>Events:</strong> ${eventCount}</p>
+      </div>
+    `;
+  }
+  
+  // Основные метрики
+  document.getElementById('nodeCount').textContent = eventCount || 0;
+  document.getElementById('edgeCount').textContent = Math.max(0, (eventCount || 0) - 1);
+  
+  // Если есть events - нарисовать граф
+  if (session.events && session.events.length > 0) {
+    // Построим простой граф из событий
+    const nodes = [];
+    const edges = [];
+    const uniqueTypes = new Set();
+    
+    session.events.forEach((event, idx) => {
+      const type = event.type || 'unknown';
+      uniqueTypes.add(type);
+      
+      // Ноды - типы событий
+      if (!nodes.find(n => n.id === type)) {
+        nodes.push({ id: type, label: type });
+      }
+      
+      // Ребра - переходы
+      if (idx > 0) {
+        const prevType = session.events[idx - 1].type || 'unknown';
+        if (prevType !== type) {
+          edges.push({ source: prevType, target: type });
+        }
+      }
+    });
+    
+    updateGraph({ nodes, edges });
+  } else {
+    drawEmptyGraph();
+  }
+  
+  // Обновить список событий
+  updateEventsList(session.events);
 }
 
 /**
@@ -357,7 +392,7 @@ function exportData() {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `session_${currentSession.sessionId || Date.now()}.json`;
+  a.download = `session_${currentSession.id || Date.now()}.json`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
@@ -372,6 +407,12 @@ function clearData() {
     currentSession = null;
     graphData = { nodes: [], edges: [] };
     nodePositions.clear();
+    
+    // Также очищаем из storage
+    chrome.storage.local.set({
+      'currentSession': null,
+      'sessionEvents': []
+    });
     
     drawEmptyGraph();
     
