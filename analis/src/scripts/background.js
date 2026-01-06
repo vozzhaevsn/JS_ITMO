@@ -9,22 +9,43 @@ console.log('[BackgroundScript] Нагружен');
 const activeSessions = new Map();
 const analyzedSessions = [];
 
+// Текущая активная сессия
+let currentSession = null;
+let sessionEvents = [];
+
+// ✅ ИНИЦИАЛИЗИРУЕМ ПРИ ЗАГРУЗКЕ
+function initializeSession() {
+  currentSession = {
+    id: 'session_' + Date.now(),
+    startTime: Date.now(),
+    url: 'loading...',
+    events: [],
+  };
+  sessionEvents = [];
+  console.log('[BackgroundScript] ✅ Session initialized:', currentSession.id);
+}
+
+// Инициализируем при загрузке скрипта
+initializeSession();
+
 /**
  * Листенер послания от контент-скрипта
  */
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  const tabId = sender.tab.id;
-  const url = sender.tab.url;
+chrome.runtime.onMessage.addListener(function(request, sender, sendResponse) {
+  const tabId = sender.tab?.id;
+  const url = sender.tab?.url;
 
-  console.log(`[BackgroundScript] Получен: ${request.type}`);
+  console.log('[BackgroundScript] Получен:', request.type);
 
   switch (request.type) {
     case 'PAGE_LOADED':
       handlePageLoaded(tabId, url, request.data);
+      sendResponse({ success: true });
       break;
 
     case 'RECORD_EVENT':
       handleEventRecording(tabId, request.data);
+      sendResponse({ success: true });
       break;
 
     case 'GET_SESSION_DATA':
@@ -37,37 +58,78 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       sendResponse(analysis);
       break;
 
+    // ✅ НОВЫЙ ОБРАБОТЧИК ДЛЯ POPUP
+    case 'GET_SESSION':
+    case 'GET_CURRENT_SESSION':
+      console.log('[BackgroundScript] ✅ GET_SESSION запрос');
+      const response = {
+        success: true,
+        session: {
+          id: currentSession.id,
+          url: currentSession.url,
+          startTime: currentSession.startTime,
+          eventCount: sessionEvents.length,
+          events: sessionEvents.slice(-100), // Последние 100 событий
+        }
+      };
+      console.log('[BackgroundScript] Отправляю:', response.session.eventCount, 'событий');
+      sendResponse(response);
+      break;
+
     default:
-      console.warn(`[BackgroundScript] Неизвестный тип: ${request.type}`);
+      console.warn('[BackgroundScript] Неизвестный тип:', request.type);
   }
+
+  // ✅ ВАЖНО: return true для асинхронных ответов
+  return true;
 });
 
 /**
  * Обработка загруженной страницы
  */
 function handlePageLoaded(tabId, url, data) {
+  // Обновляем текущую сессию
+  if (currentSession) {
+    currentSession.url = url;
+    currentSession.title = data?.title;
+  }
+
+  // Также сохраняем в activeSessions для обратной совместимости
   if (!activeSessions.has(tabId)) {
     activeSessions.set(tabId, {
       id: `session_${tabId}_${Date.now()}`,
       tabId,
       url,
-      title: data.title,
-      startTime: data.timestamp,
+      title: data?.title,
+      startTime: data?.timestamp || Date.now(),
       events: [],
       classification: null
     });
   }
-  console.log(`[BackgroundScript] Новая страница: ${url}`);
+  
+  sessionEvents = []; // Очищаем события при загрузке новой страницы
+  console.log('[BackgroundScript] Новая страница:', url);
 }
 
 /**
  * Обработка события
  */
 function handleEventRecording(tabId, event) {
+  // Сохраняем в currentSession
+  const eventWithMetadata = {
+    ...event,
+    timestamp: event.timestamp || Date.now(),
+    sessionId: currentSession?.id,
+    tabId,
+  };
+  
+  sessionEvents.push(eventWithMetadata);
+  console.log('[BackgroundScript] Записано событие:', event.type, '- Total:', sessionEvents.length);
+
+  // Также сохраняем в activeSessions для обратной совместимости
   const session = activeSessions.get(tabId);
   if (session) {
     session.events.push(event);
-    console.log(`[BackgroundScript] Записано событие: ${event.type}`);
   }
 }
 
@@ -128,19 +190,22 @@ function analyzeSession(tabId) {
  */
 
 // Очистка сессий при закрытии конключи
-
 chrome.tabs.onRemoved.addListener((tabId) => {
   const session = activeSessions.get(tabId);
   if (session) {
     analyzedSessions.push(session);
     activeSessions.delete(tabId);
-    console.log(`[BackgroundScript] Сессия ${session.id} сохранена`);
+    console.log('[BackgroundScript] Сессия сохранена:', session.id);
   }
 });
 
-// Периодическая очистка
+// Периодическая очистка и логирование
 setInterval(() => {
-  console.log(`[BackgroundScript] Активных сессий: ${activeSessions.size}`);
+  console.log('[BackgroundScript] Статус:', {
+    activeSessions: activeSessions.size,
+    currentSessionEvents: sessionEvents.length,
+    sessionId: currentSession?.id,
+  });
 }, 60000); // каждые минуты
 
-console.log('[BackgroundScript] Нагружен и готов');
+console.log('[BackgroundScript] ✅ Готов к работе');
